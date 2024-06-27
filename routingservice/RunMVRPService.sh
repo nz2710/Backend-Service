@@ -1,0 +1,1 @@
+FLASK_APP=mvrp_service/app.py flask run --port 8032 --host 0.0.0.0

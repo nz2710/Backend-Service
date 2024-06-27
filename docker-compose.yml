@@ -1,0 +1,110 @@
+version: '3.8'
+
+services:
+ # service1:
+  userservice:
+    build:
+      context: ./userservice
+      dockerfile: Dockerfile
+    volumes:
+      - ./userservice/laravel:/var/www/html/userservice
+    networks:
+      - networks_app_userservice
+      - web
+  
+  mysql_userservice:
+    build:
+      context: ./userservice/mysql
+      dockerfile: Dockerfile.mysql
+    container_name: mysql_userservice
+    volumes:
+      - ./userservice/mysql:/docker-entrypoint-initdb.d
+    ports:
+      - "3306:3306"
+    networks:
+      - networks_app_userservice
+
+  nginx_userservice:
+    build:
+      context: ./userservice/nginx
+      dockerfile: Dockerfile.nginx
+    volumes:
+      - ./userservice/nginx:/etc/nginx/conf.d/
+      - ./userservice/laravel:/var/www/html/userservice
+    ports:
+      - "8000:80"
+    networks:
+      - networks_app_userservice
+      - web
+ 
+ # service2:
+  managementservice:
+    build:
+      context: ./managementservice
+      dockerfile: Dockerfile
+    volumes:
+      - ./managementservice/laravel:/var/www/html/managementservice
+    networks:
+      - networks_app_managementservice
+      - web
+
+  mysql_managementservice:
+    build:
+      context: ./managementservice/mysql
+      dockerfile: Dockerfile.mysql
+    container_name: mysql_managementservice
+    volumes:
+      - ./managementservice/mysql:/docker-entrypoint-initdb.d
+    ports:
+      - "3308:3306"
+    networks:
+      - networks_app_managementservice
+
+  nginx_managementservice:
+    build:
+      context: ./managementservice/nginx
+      dockerfile: Dockerfile.nginx
+    volumes:
+      - ./managementservice/nginx:/etc/nginx/conf.d/
+      - ./managementservice/laravel:/var/www/html/managementservice
+    ports:
+      - "8003:80"
+    networks:
+      - networks_app_managementservice
+      - web
+
+  # phpMyAdmin 
+  phpmyadmin:
+    image: phpmyadmin/phpmyadmin
+    container_name: phpmyadmin
+    environment:
+      - PMA_ARBITRARY=1
+      - UPLOAD_LIMIT=10000000
+    ports:
+      - "8080:80"
+    networks:
+      - networks_app_userservice
+      - networks_app_managementservice  
+  # service 3
+  routingservice:
+    build:
+      context: ./routingservice
+      dockerfile: Dockerfile
+    container_name: routingservice
+    ports:
+      - "5000:5000"
+    networks:
+      - networks_app_userservice
+      - networks_app_managementservice
+    healthcheck:
+      test: ["CMD-SHELL", "curl --silent --fail localhost:5000/health-check || exit 1"]
+      interval: 10s
+      timeout: 10s
+      retries: 3    
+networks:
+  networks_app_userservice:
+    driver: bridge
+  networks_app_managementservice:
+    driver: bridge
+  web:
+    external: true

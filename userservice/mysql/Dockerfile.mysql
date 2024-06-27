@@ -1,0 +1,14 @@
+# Use the official MySQL 8 image from Docker Hub
+FROM mysql:8
+
+# Set environment variables
+ENV MYSQL_ROOT_PASSWORD=1234567890
+ENV MYSQL_DATABASE=db_userservice
+ENV MYSQL_USER=userservice
+ENV MYSQL_PASSWORD=1234567890
+
+# Copy custom MySQL configuration file
+COPY ./mysql_custom.cnf /etc/mysql/conf.d/
+
+# Expose port 3308 to the host
+EXPOSE 3306

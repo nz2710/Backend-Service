@@ -1,0 +1,3 @@
+FROM nginx:alpine
+
+COPY userservice.conf /etc/nginx/conf.d/
