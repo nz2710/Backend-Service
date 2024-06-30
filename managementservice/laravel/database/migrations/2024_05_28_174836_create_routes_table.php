@@ -21,6 +21,14 @@ class CreateRoutesTable extends Migration
             $table->decimal('total_demand',16,2);
             $table->decimal('total_distance',20,10);
             $table->decimal('total_time_serving',20,10);
+            $table->decimal('fee', 20, 2)->nullable();
+            $table->decimal('moving_cost', 20, 2)->nullable();
+            $table->decimal('labor_cost', 20, 2)->nullable();
+            $table->decimal('unloading_cost', 20, 2)->nullable();
+            $table->decimal('total_order_value', 20, 2)->nullable();
+            $table->decimal('total_route_value', 20, 2)->nullable();
+            $table->decimal('profit', 20, 2)->nullable();
+            $table->boolean('alternative')->default(false);
             $table->boolean('is_served')->nullable();  // Mặc định là được phục vụ
             $table->timestamps();
             $table->foreign('plan_id')->references('id')->on('plans')->onDelete('cascade');

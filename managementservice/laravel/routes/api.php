@@ -47,7 +47,9 @@ Route::group([
         Route::post('order', [OrderController::class, 'store']);
         Route::get('order/{id}', [OrderController::class, 'show']);
         Route::put('order/{id}', [OrderController::class, 'update']);
-        Route::delete('order/{id}', [OrderController::class, 'destroy']);
+        Route::post('order/{id}/cancel', [OrderController::class, 'destroy']);
+        Route::post('order/{id}/confirm', [OrderController::class, 'confirmOrder']);
+        Route::delete('order/{id}', [OrderController::class, 'delete']);
 
         //Partner routes
         Route::get('partner', [PartnerController::class, 'index']);
@@ -103,6 +105,13 @@ Route::group([
         Route::get('orders', [CTVController::class, 'index']);
         Route::post('orders', [CTVController::class, 'store']);
         Route::get('orders/{id}', [CTVController::class, 'show']);
+        Route::put('orders/{id}', [CTVController::class, 'update']);
+        // Route::delete('orders/{id}', [CTVController::class, 'delete']);
         Route::post('orders/{id}/cancel', [CTVController::class, 'cancel']);
+
+        // Partner Product routes
+        Route::get('products', [CTVController::class, 'showProduct']);
+        Route::get('products/{id}', [CTVController::class, 'showProductDetail']);
+        Route::get('getProducts', [CTVController::class, 'getAll']);
     });
 });

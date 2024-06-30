@@ -17,13 +17,15 @@ class PartnerMonthlyStats extends Migration
             $table->id();
             $table->unsignedBigInteger('partner_id');
             $table->foreign('partner_id')->references('id')->on('partners')->onDelete('cascade');
-            $table->integer('month');
-            $table->integer('year');
+            $table->date('stat_date');  // Ngày đầu tiên của tháng, ví dụ: 2023-06-01
+            $table->decimal('total_base_price', 20, 2)->default(0);
             $table->decimal('revenue', 20, 2)->default(0);
             $table->decimal('commission', 20, 2)->default(0);
+            $table->decimal('bonus', 20, 2)->default(0);
+            $table->integer('order_count')->default(0);
             $table->timestamps();
 
-            $table->unique(['partner_id', 'month', 'year']);
+            $table->unique(['partner_id', 'stat_date']);
         });
     }
 

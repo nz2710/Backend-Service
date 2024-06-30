@@ -71,10 +71,114 @@ class OrderController extends Controller
 
         return response()->json([
             'success' => true,
-            'message' => 'List of all partners',
+            'message' => 'List of all orders',
             'data' => $order
         ]);
     }
+
+    // {
+    //     $request->validate([
+    //         'address' => 'required|string',
+    //         'partner_id' => 'required|exists:partners,id',
+    //         'customer_name' => 'required|string|max:255',
+    //         'phone' => 'required|string',
+    //         'mass_of_order' => 'required',
+    //         'time_service' => 'required|numeric',
+    //         'products' => 'required|array',
+    //         'products.*.id' => 'required|exists:products,id',
+    //         'products.*.quantity' => ['required', 'integer', 'min:1'],
+    //         'products.*.price' => ['required', 'numeric', 'min:0'],
+    //     ]);
+
+    //     $client = new Client();
+    //     $address = $request->address;
+    //     $apiKey = env('GOONG_API_KEY');
+
+    //     // Gọi Goong.io Geocoding API để lấy thông tin địa lý từ địa chỉ
+    //     $response = $client->get("https://rsapi.goong.io/geocode?address=" . urlencode($address) . "&api_key=$apiKey");
+    //     $responseBody = json_decode($response->getBody(), true);
+
+    //     if (empty($responseBody['results'])) {
+    //         return response()->json([
+    //             'success' => false,
+    //             'message' => 'Address does not exist',
+    //         ], 400);
+    //     }
+
+    //     $location = $responseBody['results'][0]['geometry']['location'];
+    //     $latitude = $location['lat'];
+    //     $longitude = $location['lng'];
+
+    //     // Bắt đầu transaction
+    //     DB::beginTransaction();
+
+    //     try {
+    //         $order = new Order();
+    //         $order->code_order = $order->generateCodeOrder($request->partner_id);
+    //         $order->partner_id = $request->partner_id;
+    //         $order->customer_name = $request->customer_name;
+    //         $order->phone = $request->phone;
+    //         $order->mass_of_order = $request->mass_of_order;
+    //         $order->address = $request->address;
+    //         $order->longitude = $longitude;
+    //         $order->latitude = $latitude;
+    //         $order->time_service = $request->time_service;
+    //         $order->discount = $order->partner->discount;
+    //         $order->status = 'Pending';
+    //         $order->save();
+
+    //         // Kiểm tra số lượng, giá và trạng thái sản phẩm trước khi thêm vào đơn hàng
+    //         foreach ($request->products as $product) {
+    //             $productModel = Product::findOrFail($product['id']);
+
+    //             if ($product['quantity'] > $productModel->quantity) {
+    //                 throw new \Exception('Số lượng sản phẩm vượt quá số lượng trong kho');
+    //             }
+
+    //             if ($product['price'] < $productModel->price) {
+    //                 throw new \Exception('Giá sản phẩm không hợp lệ');
+    //             }
+
+    //             if ($productModel->status !== 'Active') {
+    //                 throw new \Exception('Sản phẩm không ở trạng thái active');
+    //             }
+    //         }
+
+    //         // Thêm sản phẩm vào đơn hàng
+    //         foreach ($request->products as $product) {
+    //             $order->products()->attach($product['id'], [
+    //                 'quantity' => $product['quantity'],
+    //                 'price' => $product['price']
+    //             ]);
+
+    //             $productModel = Product::findOrFail($product['id']);
+    //             $this->productService->updateProductQuantity($productModel, $product['quantity']);
+    //         }
+
+    //         $order->price = $order->calculateTotalPrice();
+    //         $order->save();
+
+    //         $this->partnerService->updatePartnerOnNewOrder($order->partner, $order->price);
+
+    //         // Commit transaction nếu không có lỗi
+    //         DB::commit();
+
+    //         return response()->json([
+    //             'success' => true,
+    //             'message' => 'Order created successfully',
+    //             'data' => $order->load('products')
+    //         ]);
+    //     } catch (\Exception $e) {
+    //         // Rollback transaction nếu có lỗi
+    //         DB::rollBack();
+
+    //         return response()->json([
+    //             'success' => false,
+    //             'message' => $e->getMessage(),
+    //         ], 400);
+    //     }
+    // }
+
     public function store(Request $request)
     {
         $request->validate([
@@ -94,7 +198,6 @@ class OrderController extends Controller
         $address = $request->address;
         $apiKey = env('GOONG_API_KEY');
 
-        // Gọi Goong.io Geocoding API để lấy thông tin địa lý từ địa chỉ
         $response = $client->get("https://rsapi.goong.io/geocode?address=" . urlencode($address) . "&api_key=$apiKey");
         $responseBody = json_decode($response->getBody(), true);
 
@@ -109,7 +212,6 @@ class OrderController extends Controller
         $latitude = $location['lat'];
         $longitude = $location['lng'];
 
-        // Bắt đầu transaction
         DB::beginTransaction();
 
         try {
@@ -124,9 +226,9 @@ class OrderController extends Controller
             $order->latitude = $latitude;
             $order->time_service = $request->time_service;
             $order->discount = $order->partner->discount;
+            $order->status = 'Waiting';
             $order->save();
 
-            // Kiểm tra số lượng, giá và trạng thái sản phẩm trước khi thêm vào đơn hàng
             foreach ($request->products as $product) {
                 $productModel = Product::findOrFail($product['id']);
 
@@ -141,34 +243,24 @@ class OrderController extends Controller
                 if ($productModel->status !== 'Active') {
                     throw new \Exception('Sản phẩm không ở trạng thái active');
                 }
-            }
 
-            // Thêm sản phẩm vào đơn hàng
-            foreach ($request->products as $product) {
                 $order->products()->attach($product['id'], [
                     'quantity' => $product['quantity'],
                     'price' => $product['price']
                 ]);
-
-                $productModel = Product::findOrFail($product['id']);
-                $this->productService->updateProductQuantity($productModel, $product['quantity']);
             }
 
             $order->price = $order->calculateTotalPrice();
             $order->save();
 
-            $this->partnerService->updatePartnerOnNewOrder($order->partner, $order->price);
-
-            // Commit transaction nếu không có lỗi
             DB::commit();
 
             return response()->json([
                 'success' => true,
-                'message' => 'Order created successfully',
+                'message' => 'Order created successfully with Waiting status',
                 'data' => $order->load('products')
             ]);
         } catch (\Exception $e) {
-            // Rollback transaction nếu có lỗi
             DB::rollBack();
 
             return response()->json([
@@ -177,6 +269,8 @@ class OrderController extends Controller
             ], 400);
         }
     }
+
+
     public function show(Request $request, $id)
     {
         $perPage = $request->input('pageSize', 5);
@@ -204,66 +298,165 @@ class OrderController extends Controller
             ]);
         }
     }
-    // public function update(Request $request, $id)
-    // {
-    //     $order = Order::with('partner')->find($id);
-    //     if ($order) {
-    //         $client = new Client();
-    //         $address = $request->address ?? $order->address;
-    //         $response = $client->get("https://api.mapbox.com/geocoding/v5/mapbox.places/$address.json?access_token=$this->apiKey");
-    //         $responseBody = json_decode($response->getBody(), true);
 
-    //         if (empty($responseBody['features'])) {
-    //             return response()->json([
-    //                 'success' => false,
-    //                 'message' => 'Address does not exist',
-    //             ], 400);
-    //         }
+    public function update(Request $request, $id)
+    {
+        $order = Order::find($id);
 
-    //         $coordinates = $responseBody['features'][0]['geometry']['coordinates'];
-    //         $order->partner_id = $request->partner_id ?? $order->partner_id;
-    //         $order->customer_name = $request->customer_name ?? $order->customer_name;
-    //         $order->price = $request->price ?? $order->price;
-    //         $order->mass_of_order = $request->mass_of_order ?? $order->mass_of_order;
-    //         $order->address = $request->address ?? $order->address;
-    //         $order->longitude = $coordinates[0];
-    //         $order->latitude = $coordinates[1];
-    //         $order->time_open = $request->time_open ?? $order->time_open;
-    //         $order->time_close = $request->time_close ?? $order->time_close;
-    //         $order->time_service = $request->time_service ?? $order->time_service;
-    //         $order->status = $request->status ?? $order->status;
-    //         $order->save();
-    //         $order->load('partner');
-    //         return response()->json([
-    //             'success' => true,
-    //             'message' => 'Order updated successfully',
-    //             'data' => [
-    //                 'id' => $order->id,
-    //                 'code_order' => $order->code_order,
-    //                 'partner_name' => $order->partner->name, // Access the partner's name through the relationship
-    //                 'customer_name' => $order->customer_name,
-    //                 'price' => $order->price,
-    //                 'mass_of_order' => $order->mass_of_order,
-    //                 'address' => $order->address,
-    //                 'longitude' => $order->longitude,
-    //                 'latitude' => $order->latitude,
-    //                 'time_open' => $order->time_open,
-    //                 'time_close' => $order->time_close,
-    //                 'time_service' => $order->time_service,
-    //                 'status' => $order->status,
-    //                 'created_at' => $order->created_at->format('Y-m-d H:i:s'),
-    //                 'updated_at' => $order->updated_at->format('Y-m-d H:i:s'),
-    //                 // Include any other order attributes you want to return here...
-    //             ]
-    //         ]);
-    //     } else {
-    //         return response()->json([
-    //             'success' => false,
-    //             'message' => 'Order not found',
-    //             'data' => null
-    //         ]);
-    //     }
-    // }
+        if (!$order) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Order not found',
+            ], 404);
+        }
+
+        if ($order->status !== 'Waiting') {
+            return response()->json([
+                'success' => false,
+                'message' => 'Only orders with Waiting status can be updated',
+            ], 400);
+        }
+
+        $request->validate([
+            'address' => 'string',
+            // 'partner_id' => 'exists:partners,id',
+            'customer_name' => 'string|max:255',
+            'phone' => 'string',
+            'mass_of_order' => 'numeric',
+            'time_service' => 'numeric',
+            'products' => 'array',
+            'products.*.id' => 'exists:products,id',
+            'products.*.quantity' => ['integer', 'min:1'],
+            'products.*.price' => ['numeric', 'min:0'],
+        ]);
+
+        DB::beginTransaction();
+
+        try {
+            if ($request->has('address')) {
+                $client = new Client();
+                $address = $request->address;
+                $apiKey = env('GOONG_API_KEY');
+
+                $response = $client->get("https://rsapi.goong.io/geocode?address=" . urlencode($address) . "&api_key=$apiKey");
+                $responseBody = json_decode($response->getBody(), true);
+
+                if (empty($responseBody['results'])) {
+                    throw new \Exception('Address does not exist');
+                }
+
+                $location = $responseBody['results'][0]['geometry']['location'];
+                $order->latitude = $location['lat'];
+                $order->longitude = $location['lng'];
+                $order->address = $request->address;
+            }
+
+            // Update partner_id if provided
+            // if ($request->has('partner_id')) {
+            //     $order->partner_id = $request->partner_id;
+            //     // Regenerate code_order if partner changes
+            //     $order->code_order = $order->generateCodeOrder($request->partner_id);
+            //     $order->discount = $order->partner->discount;
+            // }
+
+            $order->customer_name = $request->customer_name ?? $order->customer_name;
+            $order->phone = $request->phone ?? $order->phone;
+            $order->mass_of_order = $request->mass_of_order ?? $order->mass_of_order;
+            $order->time_service = $request->time_service ?? $order->time_service;
+
+            if ($request->has('products')) {
+                $order->products()->detach();
+
+                foreach ($request->products as $product) {
+                    $productModel = Product::findOrFail($product['id']);
+
+                    if ($product['quantity'] > $productModel->quantity) {
+                        throw new \Exception('Số lượng sản phẩm vượt quá số lượng trong kho');
+                    }
+
+                    if ($product['price'] < $productModel->price) {
+                        throw new \Exception('Giá sản phẩm không hợp lệ');
+                    }
+
+                    if ($productModel->status !== 'Active') {
+                        throw new \Exception('Sản phẩm không ở trạng thái active');
+                    }
+
+                    $order->products()->attach($product['id'], [
+                        'quantity' => $product['quantity'],
+                        'price' => $product['price']
+                    ]);
+                }
+
+                $order->price = $order->calculateTotalPrice();
+            }
+
+            $order->save();
+
+            DB::commit();
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Order updated successfully',
+                'data' => $order->load('products', 'partner')
+            ]);
+        } catch (\Exception $e) {
+            DB::rollBack();
+
+            return response()->json([
+                'success' => false,
+                'message' => $e->getMessage(),
+            ], 400);
+        }
+    }
+    public function confirmOrder($id)
+    {
+        $order = Order::find($id);
+
+        if (!$order) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Order not found',
+            ], 404);
+        }
+
+        if ($order->status !== 'Waiting') {
+            return response()->json([
+                'success' => false,
+                'message' => 'Only orders with Waiting status can be confirmed',
+            ], 400);
+        }
+
+        DB::beginTransaction();
+
+        try {
+            $order->status = 'Pending';
+
+            foreach ($order->products as $product) {
+                $this->productService->updateProductQuantity($product, $product->pivot->quantity);
+            }
+
+            $this->partnerService->updatePartnerOnNewOrder($order->partner, $order->price);
+
+            $order->save();
+
+            DB::commit();
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Order confirmed successfully',
+                'data' => $order->load('products')
+            ]);
+        } catch (\Exception $e) {
+            DB::rollBack();
+
+            return response()->json([
+                'success' => false,
+                'message' => $e->getMessage(),
+            ], 400);
+        }
+    }
+
     public function destroy($id)
     {
         $order = $this->orderService->cancelOrder($id);

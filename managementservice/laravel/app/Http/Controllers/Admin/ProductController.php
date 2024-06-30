@@ -42,7 +42,7 @@ class ProductController extends Controller
     public function getAll()
 
     {
-        $product = Product::where('status','Active')->get(['id', 'name', 'sku']);
+        $product = Product::where('status','Active')->get(['id', 'name', 'sku', 'price', 'quantity']);
         return response()->json([
             'success' => true,
             'message' => 'List of all products',

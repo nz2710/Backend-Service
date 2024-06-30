@@ -21,6 +21,8 @@ class CreateVehiclesTable extends Migration
             $table->integer('total_vehicles')->default(0);
             $table->decimal('fuel_consumption', 8, 2)->nullable();
             $table->decimal('fuel_cost', 8, 2)->nullable();
+            $table->decimal('hourly_rate', 8, 2)->nullable();
+            $table->decimal('shipping_rate', 8, 2)->nullable();
             $table->string('status')->default('Active');
             $table->timestamps();
         });

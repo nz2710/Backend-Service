@@ -64,7 +64,7 @@ class User extends Authenticatable implements MustVerifyEmail
 
     public function roles()
     {
-        return $this->belongsToMany(Role::class, RoleUser::class, 'user_id', 'role_id');
+        return $this->belongsToMany(Role::class, RoleUser::class, 'user_id', 'role_id')->withTimestamps();
     }
 
     // This code will be called every time a new user is inserted into the system

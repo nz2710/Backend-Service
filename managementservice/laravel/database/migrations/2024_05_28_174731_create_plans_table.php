@@ -23,6 +23,12 @@ class CreatePlansTable extends Migration
             $table->decimal('total_distance_without_allocating_vehicles', 20, 10);
             $table->decimal('total_time_serving_without_allocating_vehicles', 20, 10);
             $table->decimal('fee', 20, 2 )->nullable();
+            $table->decimal('moving_cost', 20, 2)->nullable();
+            $table->decimal('labor_cost', 20, 2)->nullable();
+            $table->decimal('unloading_cost', 20, 2)->nullable();
+            $table->decimal('total_order_value', 20, 2)->nullable();
+            $table->decimal('total_plan_value', 20, 2)->nullable();
+            $table->decimal('profit', 20, 2)->nullable();
             $table->integer('total_vehicle_used')->nullable();
             $table->integer('total_num_customer_served')->nullable();
             $table->integer('total_num_customer_not_served')->nullable();
