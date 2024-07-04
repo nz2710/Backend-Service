@@ -12,7 +12,6 @@ use App\Services\PartnerService;
 use App\Services\ProductService;
 use Illuminate\Support\Facades\DB;
 use App\Http\Controllers\Controller;
-use App\Rules\ValidateProductQuantityPrice;
 
 class OrderController extends Controller
 {
@@ -76,109 +75,6 @@ class OrderController extends Controller
         ]);
     }
 
-    // {
-    //     $request->validate([
-    //         'address' => 'required|string',
-    //         'partner_id' => 'required|exists:partners,id',
-    //         'customer_name' => 'required|string|max:255',
-    //         'phone' => 'required|string',
-    //         'mass_of_order' => 'required',
-    //         'time_service' => 'required|numeric',
-    //         'products' => 'required|array',
-    //         'products.*.id' => 'required|exists:products,id',
-    //         'products.*.quantity' => ['required', 'integer', 'min:1'],
-    //         'products.*.price' => ['required', 'numeric', 'min:0'],
-    //     ]);
-
-    //     $client = new Client();
-    //     $address = $request->address;
-    //     $apiKey = env('GOONG_API_KEY');
-
-    //     // Gọi Goong.io Geocoding API để lấy thông tin địa lý từ địa chỉ
-    //     $response = $client->get("https://rsapi.goong.io/geocode?address=" . urlencode($address) . "&api_key=$apiKey");
-    //     $responseBody = json_decode($response->getBody(), true);
-
-    //     if (empty($responseBody['results'])) {
-    //         return response()->json([
-    //             'success' => false,
-    //             'message' => 'Address does not exist',
-    //         ], 400);
-    //     }
-
-    //     $location = $responseBody['results'][0]['geometry']['location'];
-    //     $latitude = $location['lat'];
-    //     $longitude = $location['lng'];
-
-    //     // Bắt đầu transaction
-    //     DB::beginTransaction();
-
-    //     try {
-    //         $order = new Order();
-    //         $order->code_order = $order->generateCodeOrder($request->partner_id);
-    //         $order->partner_id = $request->partner_id;
-    //         $order->customer_name = $request->customer_name;
-    //         $order->phone = $request->phone;
-    //         $order->mass_of_order = $request->mass_of_order;
-    //         $order->address = $request->address;
-    //         $order->longitude = $longitude;
-    //         $order->latitude = $latitude;
-    //         $order->time_service = $request->time_service;
-    //         $order->discount = $order->partner->discount;
-    //         $order->status = 'Pending';
-    //         $order->save();
-
-    //         // Kiểm tra số lượng, giá và trạng thái sản phẩm trước khi thêm vào đơn hàng
-    //         foreach ($request->products as $product) {
-    //             $productModel = Product::findOrFail($product['id']);
-
-    //             if ($product['quantity'] > $productModel->quantity) {
-    //                 throw new \Exception('Số lượng sản phẩm vượt quá số lượng trong kho');
-    //             }
-
-    //             if ($product['price'] < $productModel->price) {
-    //                 throw new \Exception('Giá sản phẩm không hợp lệ');
-    //             }
-
-    //             if ($productModel->status !== 'Active') {
-    //                 throw new \Exception('Sản phẩm không ở trạng thái active');
-    //             }
-    //         }
-
-    //         // Thêm sản phẩm vào đơn hàng
-    //         foreach ($request->products as $product) {
-    //             $order->products()->attach($product['id'], [
-    //                 'quantity' => $product['quantity'],
-    //                 'price' => $product['price']
-    //             ]);
-
-    //             $productModel = Product::findOrFail($product['id']);
-    //             $this->productService->updateProductQuantity($productModel, $product['quantity']);
-    //         }
-
-    //         $order->price = $order->calculateTotalPrice();
-    //         $order->save();
-
-    //         $this->partnerService->updatePartnerOnNewOrder($order->partner, $order->price);
-
-    //         // Commit transaction nếu không có lỗi
-    //         DB::commit();
-
-    //         return response()->json([
-    //             'success' => true,
-    //             'message' => 'Order created successfully',
-    //             'data' => $order->load('products')
-    //         ]);
-    //     } catch (\Exception $e) {
-    //         // Rollback transaction nếu có lỗi
-    //         DB::rollBack();
-
-    //         return response()->json([
-    //             'success' => false,
-    //             'message' => $e->getMessage(),
-    //         ], 400);
-    //     }
-    // }
-
     public function store(Request $request)
     {
         $request->validate([
@@ -187,7 +83,6 @@ class OrderController extends Controller
             'customer_name' => 'required|string|max:255',
             'phone' => 'required|string',
             'mass_of_order' => 'required',
-            'time_service' => 'required|numeric',
             'products' => 'required|array',
             'products.*.id' => 'required|exists:products,id',
             'products.*.quantity' => ['required', 'integer', 'min:1'],
@@ -224,10 +119,10 @@ class OrderController extends Controller
             $order->address = $request->address;
             $order->longitude = $longitude;
             $order->latitude = $latitude;
-            $order->time_service = $request->time_service;
-            $order->discount = $order->partner->discount;
+            $order->time_service = 0.02*$request->mass_of_order*60;
             $order->status = 'Waiting';
             $order->save();
+
 
             foreach ($request->products as $product) {
                 $productModel = Product::findOrFail($product['id']);
@@ -248,9 +143,14 @@ class OrderController extends Controller
                     'quantity' => $product['quantity'],
                     'price' => $product['price']
                 ]);
+
             }
 
+            $order->total_base_price = $order->calculateTotalBasePrice();
             $order->price = $order->calculateTotalPrice();
+            $order->total_cost = $order->calculateTotalCost();
+            $order->commission = $order->price - $order->total_base_price;
+            $order->profit = $order->total_base_price - $order->total_cost;
             $order->save();
 
             DB::commit();
@@ -319,11 +219,9 @@ class OrderController extends Controller
 
         $request->validate([
             'address' => 'string',
-            // 'partner_id' => 'exists:partners,id',
             'customer_name' => 'string|max:255',
             'phone' => 'string',
             'mass_of_order' => 'numeric',
-            'time_service' => 'numeric',
             'products' => 'array',
             'products.*.id' => 'exists:products,id',
             'products.*.quantity' => ['integer', 'min:1'],
@@ -351,18 +249,12 @@ class OrderController extends Controller
                 $order->address = $request->address;
             }
 
-            // Update partner_id if provided
-            // if ($request->has('partner_id')) {
-            //     $order->partner_id = $request->partner_id;
-            //     // Regenerate code_order if partner changes
-            //     $order->code_order = $order->generateCodeOrder($request->partner_id);
-            //     $order->discount = $order->partner->discount;
-            // }
-
             $order->customer_name = $request->customer_name ?? $order->customer_name;
             $order->phone = $request->phone ?? $order->phone;
-            $order->mass_of_order = $request->mass_of_order ?? $order->mass_of_order;
-            $order->time_service = $request->time_service ?? $order->time_service;
+            if ($request->has('mass_of_order')) {
+                $order->mass_of_order = $request->mass_of_order;
+                $order->time_service = 0.02 * $request->mass_of_order*60;
+            }
 
             if ($request->has('products')) {
                 $order->products()->detach();
@@ -386,9 +278,14 @@ class OrderController extends Controller
                         'quantity' => $product['quantity'],
                         'price' => $product['price']
                     ]);
+
                 }
 
+                $order->total_base_price = $order->calculateTotalBasePrice();
                 $order->price = $order->calculateTotalPrice();
+                $order->total_cost = $order->calculateTotalCost();
+                $order->profit = $order->total_base_price - $order->total_cost;
+                $order->commission = $order->price - $order->total_base_price;
             }
 
             $order->save();
@@ -436,7 +333,7 @@ class OrderController extends Controller
                 $this->productService->updateProductQuantity($product, $product->pivot->quantity);
             }
 
-            $this->partnerService->updatePartnerOnNewOrder($order->partner, $order->price);
+            $this->partnerService->updatePartnerOnNewOrder($order->partner, $order);
 
             $order->save();
 

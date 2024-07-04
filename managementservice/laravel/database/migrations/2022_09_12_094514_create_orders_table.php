@@ -25,11 +25,14 @@ class CreateOrdersTable extends Migration
             $table->decimal('price', 20, 2)->default(0);
             $table->decimal('total_base_price', 20, 2)->default(0);
             $table->decimal('commission', 20, 2)->default(0);
+            $table->decimal('total_cost', 20, 2)->default(0);
+            $table->decimal('profit', 20, 2)->default(0);
             $table->decimal('mass_of_order', 16, 2)->nullable();
             $table->string('address')->nullable();
             $table->decimal('longitude',20,16)->nullable();
             $table->decimal('latitude',20,16)->nullable();
             $table->bigInteger('time_service')->nullable();
+            $table->date('expected_date')->nullable();
             $table->string('status')->default('Pending');
             $table->timestamps();
         });

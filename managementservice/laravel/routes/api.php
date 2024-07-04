@@ -4,12 +4,14 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\Admin\DepotController;
 use App\Http\Controllers\Admin\OrderController;
+use App\Http\Controllers\Partner\CTVController;
+use App\Http\Controllers\Admin\PartnerController;
 use App\Http\Controllers\Admin\ProductController;
 use App\Http\Controllers\Admin\RoutingController;
 use App\Http\Controllers\Admin\VehicleController;
 use App\Http\Controllers\Admin\DashBoardController;
-use App\Http\Controllers\Admin\PartnerController;
-use App\Http\Controllers\Partner\CTVController;
+use App\Http\Controllers\Admin\CommissionRuleController;
+use App\Http\Controllers\Admin\PartnerMonthlyStatController;
 
 /*
 |--------------------------------------------------------------------------
@@ -59,6 +61,19 @@ Route::group([
         Route::delete('partner/{id}', [PartnerController::class, 'destroy']);
         Route::get('getPartner', [PartnerController::class, 'getAll']);
 
+        //Commission Rule routes
+        Route::get('rule', [CommissionRuleController::class, 'index']);
+        Route::post('rule', [CommissionRuleController::class, 'store']);
+        Route::get('rule/{id}', [CommissionRuleController::class, 'show']);
+        Route::put('rule/{id}', [CommissionRuleController::class, 'update']);
+        Route::delete('rule/{id}', [CommissionRuleController::class, 'destroy']);
+
+        //Monthly Stat routes
+        Route::get('commission', [PartnerMonthlyStatController::class, 'index']);
+        Route::get('commission/{id}', [PartnerMonthlyStatController::class, 'show']);
+        Route::post('commission/update-monthly-stats', [PartnerMonthlyStatController::class, 'updateMonthlyStats']);
+        // Route::put('commission/{id}', [CommissionRuleController::class, 'update']);
+
         //Vehicle routes
         Route::get('vehicle', [VehicleController::class, 'index']);
         Route::post('vehicle', [VehicleController::class, 'store']);
@@ -76,6 +91,8 @@ Route::group([
 
         //Dashboard routes
         Route::get('dashboard/total-all', [DashBoardController::class, 'getTotalAll']);
+        Route::get('dashboard/order-status', [DashBoardController::class, 'getOrderStatusCounts']);
+        Route::get('dashboard/transport-cost', [DashBoardController::class, 'getTransportationCosts']);
         // Route::get('dashboard/summary', [DashBoardController::class, 'getSummaryData']);
         Route::get('dashboard/top-partners', [DashBoardController::class, 'getTopPartners']);
         Route::get('dashboard/top-products', [DashBoardController::class, 'getTopProducts']);
@@ -84,7 +101,6 @@ Route::group([
         Route::get('dashboard/cost-summary', [DashBoardController::class, 'getCostSummary']);
         Route::get('dashboard/summary', [DashBoardController::class, 'getSummary']);
 
-
         //Routing routes
         Route::post('routing/generateFile', [RoutingController::class, 'generateFile']);
         Route::get('routing', [RoutingController::class, 'index']);
@@ -92,6 +108,7 @@ Route::group([
         Route::get('/routing/{id}', [RoutingController::class, 'show']);
         // Route::get('/routing/{routeId}/coordinates', [RoutingController::class, 'getRouteCoordinates']);
         Route::get('/route/{routeId}', [RoutingController::class, 'showRoute']);
+        Route::get('/plans/{planId}/routes', [RoutingController::class, 'getRoutes']);
         Route::put('/plans/{planId}/confirm', [RoutingController::class, 'confirmPlan']);
         Route::put('/plans/{planId}/complete', [RoutingController::class, 'completePlan']);
     });
@@ -113,5 +130,7 @@ Route::group([
         Route::get('products', [CTVController::class, 'showProduct']);
         Route::get('products/{id}', [CTVController::class, 'showProductDetail']);
         Route::get('getProducts', [CTVController::class, 'getAll']);
+
+        Route::get('stats', [CTVController::class, 'getStats']);
     });
 });

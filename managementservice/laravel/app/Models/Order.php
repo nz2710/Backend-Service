@@ -11,6 +11,28 @@ use Illuminate\Support\Str;
 class Order extends Model
 {
     use HasFactory;
+    protected $fillable = [
+        'id',
+        'route_id',
+        'partner_id',
+        'code_order',
+        'customer_name',
+        'phone',
+        'price',
+        'total_base_price',
+        'commission',
+        'total_cost',
+        'profit',
+        'mass_of_order',
+        'address',
+        'longitude',
+        'latitude',
+        'time_service',
+        'expected_date',
+        'status',
+        'created_at',
+        'updated_at'
+    ];
     public function partner()
     {
         return $this->belongsTo('App\Models\Partner');
@@ -22,10 +44,25 @@ class Order extends Model
     }
 
 
+    public function calculateTotalBasePrice()
+    {
+        return $this->products->sum(function ($product) {
+            return $product->price * $product->pivot->quantity;
+        });
+    }
+
+
     public function calculateTotalPrice()
     {
         return $this->products->sum(function ($product) {
             return $product->pivot->price * $product->pivot->quantity;
+        });
+    }
+
+    public function calculateTotalCost()
+    {
+        return $this->products->sum(function ($product) {
+            return $product->cost * $product->pivot->quantity;
         });
     }
 
@@ -55,24 +92,4 @@ class Order extends Model
 
         return $codeOrder;
     }
-    // protected static function booted()
-    // {
-    //     static::created(function ($order) {
-    //         $order->partner->increment('revenue', $order->price);
-    //         $order->partner->increment('number_of_order');
-    //         $order->partner->update(['commission' => $order->partner->revenue * ($order->partner->discount / 100)]);
-    //     });
-
-    //     static::updated(function ($order) {
-    //         $order->partner->decrement('revenue', $order->getOriginal('price'));
-    //         $order->partner->increment('revenue', $order->price);
-    //         $order->partner->update(['commission' => $order->partner->revenue * ($order->partner->discount / 100)]);
-    //     });
-
-    //     static::deleted(function ($order) {
-    //         $order->partner->decrement('revenue', $order->price);
-    //         $order->partner->decrement('number_of_order');
-    //         $order->partner->update(['commission' => $order->partner->revenue * ($order->partner->discount / 100)]);
-    //     });
-    // }
 }

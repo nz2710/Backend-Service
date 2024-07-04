@@ -54,7 +54,6 @@ class PartnerController extends Controller
         $partner->register_date = Carbon::today();
         $partner->address = $request->address;
         $partner->phone = $request->phone;
-        $partner->discount = $request->input('discount', 10.00);
         $partner->date_of_birth = $request->date_of_birth;
         $partner->gender = $request->gender;
         $partner->save();
@@ -108,7 +107,6 @@ class PartnerController extends Controller
             // $partner->register_date = $request->register_date ?? $partner->register_date;
             $partner->address = $request->address ?? $partner->address;
             $partner->phone = $request->phone ?? $partner->phone;
-            $partner->discount = $request->discount ?? $partner->discount;
             $partner->date_of_birth = $request->date_of_birth ?? $partner->date_of_birth;
             $partner->gender = $request->gender ?? $partner->gender;
             $partner->status = $request->status ?? $partner->status;

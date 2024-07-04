@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Admin;
 
+use Carbon\Carbon;
 use App\Models\Plan;
 use App\Models\Depot;
 use App\Models\Order;
@@ -29,6 +30,7 @@ class RoutingController extends Controller
                 'depot_ids.*' => 'exists:depots,id',
                 'select_all_orders' => 'required|boolean',
                 'select_all_depots' => 'required|boolean',
+                'expected_date' => 'required|date',
             ]);
 
             $selectedVehicleId = $validatedData['vehicle_id'];
@@ -37,6 +39,7 @@ class RoutingController extends Controller
             $timeLimit = $validatedData['time_limit'] ?? 999999;
             $weightLimit = $selectedVehicle->capacity;
             $VValue = $selectedVehicle->speed;
+            $expectedDate = $validatedData['expected_date'];
 
             // Fetch orders
             if ($validatedData['select_all_orders']) {
@@ -93,7 +96,7 @@ class RoutingController extends Controller
             $filePath = 'routing/' . $filename;
             Storage::put($filePath, $fileContent);
 
-            $responseData = $this->processFile($filePath, $filename, $VValue, $selectedVehicleId);
+            $responseData = $this->processFile($filePath, $filename, $VValue, $selectedVehicleId, $expectedDate);
 
             return response()->json($responseData);
         } catch (\Exception $e) {
@@ -102,7 +105,7 @@ class RoutingController extends Controller
         }
     }
 
-    public function processFile($filePath, $filename, $VValue, $selectedVehicleId)
+    public function processFile($filePath, $filename, $VValue, $selectedVehicleId, $expectedDate)
     {
         try {
             $client = new Client();
@@ -122,7 +125,7 @@ class RoutingController extends Controller
 
             $responseData = json_decode($response->getBody(), true);
             // Lưu trữ dữ liệu vào cơ sở dữ liệu
-            DB::transaction(function () use ($responseData, $selectedVehicleId) {
+            DB::transaction(function () use ($responseData, $selectedVehicleId, $expectedDate) {
                 // Lấy thông tin của vehicle được chọn
                 $vehicle = Vehicle::find($selectedVehicleId);
                 $fuelCost = $vehicle->fuel_cost;
@@ -132,16 +135,19 @@ class RoutingController extends Controller
 
                 // Tính toán fee dựa trên công thức
                 $plan_moving_cost = $fuelCost * $fuelConsumption * $responseData['total_distance_served'];
-                $plan_labor_cost = $hourly_rate * $responseData['total_time_serving_served'];
+                $plan_labor_cost = $hourly_rate * ($responseData['total_time_serving_served'] / 60);
                 $plan_unloading_cost = $shipping_rate * $responseData['total_demand_served'];
                 $plan_fee = $plan_moving_cost + $plan_labor_cost;
 
                 // Khởi tạo các biến tính toán
                 $total_order_value = 0;
+                $total_order_profit = 0;
 
                 // Lưu thông tin kế hoạch giao hàng vào bảng plans
                 $plan = Plan::create([
                     'name' => 'Delivery Plan' . ' ' . now()->format('Y-m-d H:i:s'),
+                    'vehicle_id' => $selectedVehicleId,
+                    'expected_date' => $expectedDate,
                     'total_demand' => $responseData['total_demand_served'],
                     'total_distance' => $responseData['total_distance_served'],
                     'total_time_serving' => $responseData['total_time_serving_served'],
@@ -161,7 +167,7 @@ class RoutingController extends Controller
                 // Lưu thông tin các tuyến đường vào bảng routes và tính toán các giá trị
                 foreach ($responseData['route_served_List_return_id'] as $route) {
                     $route_moving_cost = $fuelCost * $fuelConsumption * $route['total_distance'];
-                    $route_labor_cost = $hourly_rate * $route['total_time_serving'];
+                    $route_labor_cost = $hourly_rate * ($route['total_time_serving'] / 60);
                     $route_unloading_cost = $shipping_rate * $route['total_demand'];
 
                     $depotId = substr($route['depot_origin'], 6);
@@ -172,13 +178,18 @@ class RoutingController extends Controller
                     });
 
                     // Tính tổng giá trị các đơn hàng
-                    $route_order_value = Order::whereIn('id', $order_ids)->sum('price');
+                    $routeStats = Order::whereIn('id', $order_ids)
+                        ->selectRaw('SUM(price) as route_order_value, SUM(profit) as total_order_profit')
+                        ->first();
+                    $route_order_value = $routeStats->route_order_value;
+                    $route_order_profit = $routeStats->total_order_profit;
                     $route_total_route_value = $route_order_value + $route_unloading_cost;
                     $route_fee =  $route_labor_cost + $route_moving_cost;
-                    $route_profit = $route_total_route_value - $route_fee;
+                    $route_profit = $route_order_profit + $route_unloading_cost - $route_fee;
 
                     // Cộng dồn vào các biến tính toán
                     $total_order_value += $route_order_value;
+                    $total_order_profit += $route_order_profit;
 
                     Route::create([
                         'plan_id' => $plan->id,
@@ -192,6 +203,7 @@ class RoutingController extends Controller
                         'labor_cost' => $route_labor_cost,
                         'unloading_cost' => $route_unloading_cost,
                         'total_order_value' => $route_order_value,
+                        'total_order_profit' => $route_order_profit,
                         'total_route_value' => $route_total_route_value,
                         'profit' => $route_profit,
                         'alternative' => $route['alternative'],
@@ -199,11 +211,12 @@ class RoutingController extends Controller
                     ]);
                 }
                 $total_plan_value = $total_order_value + $plan_unloading_cost;
-                $plan_profit = $total_plan_value - $plan_fee;
+                $plan_profit = $total_order_profit + $plan_unloading_cost - $plan_fee;
 
                 // Cập nhật thông tin kế hoạch giao hàng với các giá trị đã tính toán
                 $plan->update([
                     'total_order_value' => $total_order_value,
+                    'total_order_profit' => $total_order_profit,
                     'total_plan_value' => $total_plan_value,
                     'profit' => $plan_profit,
                 ]);
@@ -211,7 +224,7 @@ class RoutingController extends Controller
                 // Lưu thông tin các tuyến đường không được phục vụ vào bảng routes
                 foreach ($responseData['route_not_served_List_return_id'] as $route) {
                     $route_moving_cost = $fuelCost * $fuelConsumption * $route['total_distance'];
-                    $route_labor_cost = $hourly_rate * $route['total_time_serving'];
+                    $route_labor_cost = $hourly_rate * ($route['total_time_serving'] / 60);
                     $route_unloading_cost = $shipping_rate * $route['total_demand'];
 
                     $depotId = substr($route['depot_origin'], 6);
@@ -222,10 +235,14 @@ class RoutingController extends Controller
                     });
 
                     // Tính tổng giá trị các đơn hàng
-                    $route_order_value = Order::whereIn('id', $order_ids)->sum('price');
+                    $routeStats = Order::whereIn('id', $order_ids)
+                        ->selectRaw('SUM(price) as route_order_value, SUM(profit) as total_order_profit')
+                        ->first();
+                    $route_order_value = $routeStats->route_order_value;
+                    $route_order_profit = $routeStats->total_order_profit;
                     $route_total_route_value = $route_order_value + $route_unloading_cost;
                     $route_fee =  $route_labor_cost + $route_moving_cost;
-                    $route_profit = $route_total_route_value - $route_fee;
+                    $route_profit = $route_order_profit + $route_unloading_cost - $route_fee;
 
                     Route::create([
                         'plan_id' => $plan->id,
@@ -239,6 +256,7 @@ class RoutingController extends Controller
                         'labor_cost' => $route_labor_cost,
                         'unloading_cost' => $route_unloading_cost,
                         'total_order_value' => $route_order_value,
+                        'total_order_profit' => $route_order_profit,
                         'total_route_value' => $route_total_route_value,
                         'profit' => $route_profit,
                         'alternative' => $route['alternative'],
@@ -256,11 +274,18 @@ class RoutingController extends Controller
 
     public function index(Request $request)
     {
+        $date = $request->input('date');
         $name = $request->input('name');
         $orderBy = $request->input('order_by', 'id');
         $sortBy = $request->input('sort_by', 'asc');
 
         $plan = Plan::orderBy($orderBy, $sortBy);
+
+        if ($date) {
+            $startDate = Carbon::parse($date)->startOfDay();
+            $endDate = Carbon::parse($date)->endOfDay();
+            $plan = $plan->whereBetween('updated_at', [$startDate, $endDate]);
+        }
 
         if ($name) {
             $plan = $plan->where('name', 'like', '%' . $name . '%');
@@ -299,7 +324,7 @@ class RoutingController extends Controller
         $perPage = $request->input('pageSize', 10);
         $page = $request->input('page', 1);
 
-        $plan = Plan::with('routes')->find($id);
+        $plan = Plan::with('vehicle')->find($id);
 
         if (!$plan) {
             return response()->json([
@@ -313,6 +338,9 @@ class RoutingController extends Controller
         $planData = [
             'id' => $plan->id,
             'name' => $plan->name,
+            'vehicle_id ' => $plan->vehicle_id,
+            'vehicle_name' => $plan->vehicle->name ?? 'N/A', // Thêm tên vehicle
+            'expected_date' => $plan->expected_date,
             'total_demand' => $plan->total_demand,
             'total_distance' => $plan->total_distance,
             'total_time_serving' => $plan->total_time_serving,
@@ -325,6 +353,7 @@ class RoutingController extends Controller
             'labor_cost' => $plan->labor_cost,
             'unloading_cost' => $plan->unloading_cost,
             'total_order_value' => $plan->total_order_value,
+            'total_order_profit' => $plan->total_order_profit,
             'total_plan_value' => $plan->total_plan_value,
             'profit' => $plan->profit,
             'total_vehicle_used' => $plan->total_vehicle_used,
@@ -393,6 +422,7 @@ class RoutingController extends Controller
             'labor_cost' => $route->labor_cost,
             'unloading_cost' => $route->unloading_cost,
             'total_order_value' => $route->total_order_value,
+            'total_order_profit' => $route->total_order_profit,
             'total_route_value' => $route->total_route_value,
             'profit' => $route->profit,
             'alternative' => $route->alternative,
@@ -439,110 +469,160 @@ class RoutingController extends Controller
         ]);
     }
 
+    // public function getRoutes(Request $request, $planId)
+    // {
+    //     $plan = Plan::findOrFail($planId);
+
+    //     if ($plan->status !== 'Delivery') {
+    //         return response()->json([
+    //             'success' => false,
+    //             'message' => 'This plan is not in Delivery status.',
+    //         ], 400);
+    //     }
+
+    //     $perPage = $request->input('per_page', 10);
+    //     $page = $request->input('page', 1);
+
+    //     $routes = $plan->routes()
+    //         ->where('is_served', true)
+    //         ->select('id', 'route')
+    //         ->paginate($perPage, ['*'], 'page', $page);
+
+    //     $allOrderIds = $routes->pluck('route')
+    //         ->map(function ($route) {
+    //             return array_filter(json_decode($route, true), 'is_numeric');
+    //         })
+    //         ->flatten()
+    //         ->unique();
+
+    //     $orderDetails = Order::whereIn('id', $allOrderIds)
+    //         ->select('id', 'code_order')
+    //         ->get()
+    //         ->keyBy('id');
+
+    //     $formattedRoutes = $routes->map(function ($route) use ($orderDetails) {
+    //         $routeData = json_decode($route->route, true);
+    //         $orders = array_values(array_filter($routeData, function($item) {
+    //             return is_numeric($item);
+    //         }));
+
+    //         $ordersWithCodes = array_map(function($orderId) use ($orderDetails) {
+    //             $order = $orderDetails->get($orderId);
+    //             return [
+    //                 'id' => $orderId,
+    //                 'code_order' => $order ? $order->code_order : null
+    //             ];
+    //         }, $orders);
+
+    //         return [
+    //             'route_id' => $route->id,
+    //             'orders' => $ordersWithCodes,
+    //         ];
+    //     });
+
+    //     return response()->json([
+    //         'success' => true,
+    //         'plan_id' => $plan->id,
+    //         'plan_name' => $plan->name,
+    //         'routes' => $formattedRoutes,
+    //         'current_page' => $routes->currentPage(),
+    //         'per_page' => $routes->perPage(),
+    //         'total' => $routes->total(),
+    //         'last_page' => $routes->lastPage(),
+    //     ]);
+    // }
+
     public function confirmPlan($planId)
     {
-        $plan = Plan::find($planId);
+        try {
+            $plan = Plan::with(['routes' => function ($query) {
+                $query->where('is_served', true);
+            }])->findOrFail($planId);
 
-        if (!$plan) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Plan not found'
-            ], 404);
-        }
-
-        // Lấy tất cả các route của plan có is_served = true
-        $routes = $plan->routes()->where('is_served', true)->get();
-
-        // Lấy danh sách order_id từ tất cả các route
-        $orderIds = [];
-        foreach ($routes as $route) {
-            $routeOrderIds = json_decode($route->route, true);
-            $routeOrderIds = array_filter($routeOrderIds, function ($value) {
-                return is_numeric($value);
-            });
-            $orderIds = array_merge($orderIds, $routeOrderIds);
-        }
-
-        // Kiểm tra xem có bất kỳ order nào đã có trạng thái "Delivery" không
-        $deliveredOrders = Order::whereIn('id', $orderIds)
-            ->where('status', 'Delivery')
-            ->exists();
-
-        if ($deliveredOrders) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Cannot confirm plan. Some orders are already delivered.'
-            ], 400);
-        }
-
-        DB::transaction(function () use ($plan, $routes, $orderIds) {
-            // Cập nhật trạng thái của plan thành "Delivery"
-            $plan->status = 'Delivery';
-            $plan->save();
-
-            foreach ($routes as $route) {
-                // Cập nhật trạng thái của các order thành "Delivery" và cập nhật route_id
-                Order::whereIn('id', $orderIds)->update([
-                    'status' => 'Delivery',
-                    'route_id' => $route->id
-                ]);
+            if ($plan->routes->isEmpty()) {
+                return $this->jsonResponse(false, 'No valid routes found for this plan.', 400);
             }
-        });
 
-        return response()->json([
-            'success' => true,
-            'message' => 'Plan confirmed successfully'
-        ]);
-    }
+            $orderIds = $this->getOrderIdsFromPlan($plan);
 
-    public function completePlan($planId)
-{
-    $plan = Plan::find($planId);
+            $deliveredOrdersCount = Order::whereIn('id', $orderIds)
+                ->where('status', 'Delivery')
+                ->count();
 
-    if (!$plan) {
-        return response()->json([
-            'success' => false,
-            'message' => 'Plan not found'
-        ], 404);
-    }
+            if ($deliveredOrdersCount > 0) {
+                return $this->jsonResponse(false, 'Cannot confirm plan. Some orders are already delivered.', 400);
+            }
 
-    // Kiểm tra xem plan đã ở trạng thái "Delivery" hay chưa
-    if ($plan->status !== 'Delivery') {
-        return response()->json([
-            'success' => false,
-            'message' => 'Cannot complete plan. The plan is not in Delivery status.'
-        ], 400);
-    }
+            DB::transaction(function () use ($plan, $orderIds) {
+                $plan->status = 'Delivery';
+                $plan->save();
 
-    // Lấy tất cả các route của plan có is_served = true
-    $routes = $plan->routes()->where('is_served', true)->get();
+                foreach ($plan->routes as $route) {
+                    $routeOrderIds = $this->getOrderIdsFromRouteData(json_decode($route->route, true));
+                    Order::whereIn('id', $routeOrderIds)->update([
+                        'expected_date' => $plan->expected_date,
+                        'status' => 'Delivery',
+                        'route_id' => $route->id
+                    ]);
+                }
+            });
 
-    // Lấy danh sách order_id từ tất cả các route
-    $orderIds = [];
-    foreach ($routes as $route) {
-        $routeOrderIds = json_decode($route->route, true);
-        $routeOrderIds = array_filter($routeOrderIds, function ($value) {
-            return is_numeric($value);
-        });
-        $orderIds = array_merge($orderIds, $routeOrderIds);
-    }
-
-    DB::transaction(function () use ($plan, $routes, $orderIds) {
-        // Cập nhật trạng thái của plan thành "Success"
-        $plan->status = 'Success';
-        $plan->save();
-
-        foreach ($routes as $route) {
-            // Cập nhật trạng thái của các order thành "Success"
-            Order::whereIn('id', $orderIds)->update([
-                'status' => 'Success'
-            ]);
+            return $this->jsonResponse(true, 'Plan confirmed successfully');
+        } catch (\Exception $e) {
+            return $this->jsonResponse(false, 'An error occurred: ' . $e->getMessage(), 500);
         }
-    });
+    }
 
-    return response()->json([
-        'success' => true,
-        'message' => 'Plan completed successfully'
-    ]);
-}
+    public function completePlan(Request $request, $planId)
+    {
+        try {
+            $plan = Plan::with(['routes' => function ($query) {
+                $query->where('is_served', true);
+            }])->findOrFail($planId);
+
+            if ($plan->status !== 'Delivery') {
+                return $this->jsonResponse(false, 'This plan is not in Delivery status.', 400);
+            }
+
+            DB::transaction(function () use ($plan) {
+                $orderIds = $this->getOrderIdsFromPlan($plan);
+
+                Order::whereIn('id', $orderIds)->update(['status' => 'Success']);
+
+                $plan->status = 'Success';
+                $plan->save();
+            });
+
+            return $this->jsonResponse(true, 'Plan completed successfully', 200, ['plan_status' => $plan->status]);
+        } catch (\Exception $e) {
+            return $this->jsonResponse(false, 'An error occurred: ' . $e->getMessage(), 500);
+        }
+    }
+
+    private function getOrderIdsFromPlan($plan)
+    {
+        return $plan->routes->flatMap(function ($route) {
+            return $this->getOrderIdsFromRouteData(json_decode($route->route, true));
+        })->unique()->values();
+    }
+
+    private function getOrderIdsFromRouteData($routeData)
+    {
+        if (!empty($routeData) && str_starts_with($routeData[0], 'depot_')) {
+            array_shift($routeData);
+        }
+        if (!empty($routeData) && str_starts_with(end($routeData), 'depot_')) {
+            array_pop($routeData);
+        }
+
+        return array_values(array_filter($routeData, 'is_numeric'));
+    }
+
+    private function jsonResponse($success, $message, $status = 200, $extraData = [])
+    {
+        return response()->json(array_merge([
+            'success' => $success,
+            'message' => $message
+        ], $extraData), $status);
+    }
 }

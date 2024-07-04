@@ -26,6 +26,7 @@ class CreateRoutesTable extends Migration
             $table->decimal('labor_cost', 20, 2)->nullable();
             $table->decimal('unloading_cost', 20, 2)->nullable();
             $table->decimal('total_order_value', 20, 2)->nullable();
+            $table->decimal('total_order_profit', 20, 2)->nullable();
             $table->decimal('total_route_value', 20, 2)->nullable();
             $table->decimal('profit', 20, 2)->nullable();
             $table->boolean('alternative')->default(false);

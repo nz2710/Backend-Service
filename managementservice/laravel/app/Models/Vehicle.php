@@ -21,4 +21,9 @@ class Vehicle extends Model
         'created_at',
         'updated_at'
     ];
+
+    public function plans()
+    {
+        return $this->hasMany(Plan::class);
+    }
 }

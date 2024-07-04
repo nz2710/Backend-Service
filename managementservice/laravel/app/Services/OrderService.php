@@ -2,12 +2,15 @@
 
 namespace App\Services;
 
+use Carbon\Carbon;
 use App\Models\Order;
 use GuzzleHttp\Client;
 use App\Models\Partner;
 use App\Models\Product;
+use App\Models\CommissionRule;
 use App\Services\PartnerService;
 use App\Services\ProductService;
+use App\Models\PartnerMonthlyStat;
 use Illuminate\Support\Facades\DB;
 
 class OrderService
@@ -29,8 +32,12 @@ class OrderService
             return $order;
         }
 
-        if ($order->status === 'Success') {
-            throw new \Exception('Cannot cancel a successful order');
+        // if ($order->status === 'Success') {
+        //     throw new \Exception('Cannot cancel a successful order');
+        // }
+
+        if ($order->status === 'Delivery') {
+            throw new \Exception('Cannot cancel a delivery order');
         }
 
         DB::beginTransaction();
@@ -44,12 +51,44 @@ class OrderService
                     // Không cần cập nhật partner hay sản phẩm
                     break;
                 case 'Pending':
-                case 'Delivery':
+                case 'Success':
                     // Cập nhật revenue, number_of_order và commission của partner
                     $partner->revenue -= $order->price;
                     $partner->number_of_order -= 1;
-                    $partner->commission -= $order->price * ($order->discount / 100);
+                    $partner->commission -= $order->commission;
+
+                    // Lấy thông tin partner_monthly_stat của tháng hiện tại
+                    $statDate = Carbon::parse($order->created_at)->startOfMonth()->format('Y-m-d');
+                    $partnerMonthlyStat = PartnerMonthlyStat::firstOrNew([
+                        'partner_id' => $partner->id,
+                        'stat_date' => $statDate,
+                    ]);
+
+                    // Trừ bonus của tháng hiện tại khỏi tổng bonus của partner
+                    $partner->bonus -= $partnerMonthlyStat->bonus;
+
                     $partner->save();
+
+                    // Cập nhật bảng partner_monthly_stats
+                    $partnerMonthlyStat->total_base_price -= $order->total_base_price;
+                    $partnerMonthlyStat->revenue -= $order->price;
+                    $partnerMonthlyStat->commission -= $order->commission;
+                    $partnerMonthlyStat->order_count -= 1;
+
+                    // Tính lại bonus dựa trên revenue mới
+                    $commissionRule = CommissionRule::where('revenue_milestone', '<=', $partnerMonthlyStat->revenue)
+                        ->orderBy('revenue_milestone', 'desc')
+                        ->first();
+
+                    if ($commissionRule) {
+                        $partnerMonthlyStat->bonus = $commissionRule->bonus_amount;
+                    } else {
+                        $partnerMonthlyStat->bonus = 0;
+                    }
+                    // Cập nhật total_amount
+                    $partnerMonthlyStat->total_amount = $partnerMonthlyStat->commission + $partnerMonthlyStat->bonus;
+
+                    $partnerMonthlyStat->save();
 
                     // Cập nhật quantity của các sản phẩm trong đơn hàng
                     foreach ($products as $product) {
@@ -79,6 +118,10 @@ class OrderService
             throw new \Exception('Cannot delete a successful order');
         }
 
+        if ($order->status === 'Delivery') {
+            throw new \Exception('Cannot delete an order in Delivery status');
+        }
+
         DB::beginTransaction();
 
         try {
@@ -90,12 +133,43 @@ class OrderService
                     // Không cần cập nhật partner hay sản phẩm
                     break;
                 case 'Pending':
-                case 'Delivery':
                     // Cập nhật revenue, number_of_order và commission của partner
                     $partner->revenue -= $order->price;
                     $partner->number_of_order -= 1;
-                    $partner->commission -= $order->price * ($order->discount / 100);
+                    $partner->commission -= $order->commission;
+
+                    // Lấy thông tin partner_monthly_stat của tháng hiện tại
+                    $statDate = Carbon::parse($order->created_at)->startOfMonth()->format('Y-m-d');
+                    $partnerMonthlyStat = PartnerMonthlyStat::firstOrNew([
+                        'partner_id' => $partner->id,
+                        'stat_date' => $statDate,
+                    ]);
+
+                    // Trừ bonus của tháng hiện tại khỏi tổng bonus của partner
+                    $partner->bonus -= $partnerMonthlyStat->bonus;
+
                     $partner->save();
+
+                    // Cập nhật bảng partner_monthly_stats
+                    $partnerMonthlyStat->total_base_price -= $order->total_base_price;
+                    $partnerMonthlyStat->revenue -= $order->price;
+                    $partnerMonthlyStat->commission -= $order->commission;
+                    $partnerMonthlyStat->order_count -= 1;
+
+                    // Tính lại bonus dựa trên revenue mới
+                    $commissionRule = CommissionRule::where('revenue_milestone', '<=', $partnerMonthlyStat->revenue)
+                        ->orderBy('revenue_milestone', 'desc')
+                        ->first();
+
+                    if ($commissionRule) {
+                        $partnerMonthlyStat->bonus = $commissionRule->bonus_amount;
+                    } else {
+                        $partnerMonthlyStat->bonus = 0;
+                    }
+
+                    $partnerMonthlyStat->total_amount = $partnerMonthlyStat->commission + $partnerMonthlyStat->bonus;
+
+                    $partnerMonthlyStat->save();
 
                     // Cập nhật quantity của các sản phẩm trong đơn hàng
                     foreach ($products as $product) {
@@ -149,11 +223,10 @@ class OrderService
             $order->customer_name = $data['customer_name'];
             $order->phone = $data['phone'];
             $order->mass_of_order = $data['mass_of_order'];
+            $order->time_service = 0.02 * $data['mass_of_order'] * 60;
             $order->address = $data['address'];
             $order->longitude = $longitude;
             $order->latitude = $latitude;
-            $order->time_service = $data['time_service'];
-            $order->discount = Partner::find($partnerId)->discount;
             $order->status = 'Waiting';
             $order->save();
 
@@ -177,8 +250,11 @@ class OrderService
                     'price' => $product['price']
                 ]);
             }
-
+            $order->total_base_price = $order->calculateTotalBasePrice();
             $order->price = $order->calculateTotalPrice();
+            $order->total_cost = $order->calculateTotalCost();
+            $order->commission = $order->price - $order->total_base_price;
+            $order->profit = $order->total_base_price - $order->total_cost;
             $order->save();
 
             DB::commit();
@@ -223,7 +299,7 @@ class OrderService
             $order->customer_name = $data['customer_name'] ?? $order->customer_name;
             $order->phone = $data['phone'] ?? $order->phone;
             $order->mass_of_order = $data['mass_of_order'] ?? $order->mass_of_order;
-            $order->time_service = $data['time_service'] ?? $order->time_service;
+            $order->time_service = 0.02 * $data['mass_of_order'] * 60;
 
             // Update products if provided
             if (isset($data['products'])) {
@@ -249,8 +325,11 @@ class OrderService
                         'price' => $product['price']
                     ]);
                 }
-
+                $order->total_base_price = $order->calculateTotalBasePrice();
                 $order->price = $order->calculateTotalPrice();
+                $order->total_cost = $order->calculateTotalCost();
+                $order->commission = $order->price - $order->total_base_price;
+                $order->profit = $order->total_base_price - $order->total_cost;
             }
 
             $order->save();

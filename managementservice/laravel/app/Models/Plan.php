@@ -10,6 +10,8 @@ class Plan extends Model
     use HasFactory;
     protected $fillable = [
         'name',
+        'vehicle_id',
+        'expected_date',
         'total_demand',
         'total_distance',
         'total_time_serving',
@@ -21,6 +23,7 @@ class Plan extends Model
         'labor_cost',
         'unloading_cost',
         'total_order_value',
+        'total_order_profit',
         'total_plan_value',
         'profit',
         'total_vehicle_used',
@@ -31,7 +34,11 @@ class Plan extends Model
         'updated_at'
     ];
     public function routes()
-{
-    return $this->hasMany(Route::class);
-}
+    {
+        return $this->hasMany(Route::class);
+    }
+    public function vehicle()
+    {
+        return $this->belongsTo(Vehicle::class);
+    }
 }

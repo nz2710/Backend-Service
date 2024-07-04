@@ -88,7 +88,7 @@ class AdminUserService
         $sortBy = $request->input('sort_by', 'asc');
 
         $user = User::with(['roles:name'])
-            ->select('id', 'username', 'first_name', 'last_name', 'email', 'status')
+            ->select('id', 'username', 'first_name', 'last_name', 'email', 'status', 'partner_id')
             ->orderBy($orderBy, $sortBy);
 
         if ($username) {

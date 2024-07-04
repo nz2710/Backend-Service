@@ -63,6 +63,9 @@ WORKDIR /var/www/html/managementservice
 # # Copy source code to container
 COPY . /var/www/html/managementservice
 # USER $user
+# Set managementservice folder permissions
+RUN chown -R www-data:www-data /var/www/html/managementservice
+RUN chmod -R 777 /var/www/html/managementservice
 
 # Expose cổng mặc định cho server HTTP
 EXPOSE 9000

@@ -15,7 +15,10 @@ class CreatePlansTable extends Migration
     {
         Schema::create('plans', function (Blueprint $table) {
             $table->id();
+            $table->unsignedBigInteger('vehicle_id');
+            $table->foreign('vehicle_id')->references('id')->on('vehicles')->onDelete('cascade');
             $table->string('name')->nullable();
+            $table->date('expected_date')->nullable();
             $table->decimal('total_demand', 16, 2);
             $table->decimal('total_distance', 20, 10);
             $table->decimal('total_time_serving', 20, 10);
@@ -27,6 +30,7 @@ class CreatePlansTable extends Migration
             $table->decimal('labor_cost', 20, 2)->nullable();
             $table->decimal('unloading_cost', 20, 2)->nullable();
             $table->decimal('total_order_value', 20, 2)->nullable();
+            $table->decimal('total_order_profit', 20, 2)->nullable();
             $table->decimal('total_plan_value', 20, 2)->nullable();
             $table->decimal('profit', 20, 2)->nullable();
             $table->integer('total_vehicle_used')->nullable();

@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Partner;
 
 use App\Models\Order;
+use App\Models\Partner;
 use App\Models\Product;
 use Illuminate\Http\Request;
 use App\Services\OrderService;
@@ -74,7 +75,6 @@ class CTVController extends Controller
             'customer_name' => 'required|string|max:255',
             'phone' => 'required|string',
             'mass_of_order' => 'required|numeric',
-            'time_service' => 'required|numeric',
             'products' => 'required|array',
             'products.*.id' => 'required|exists:products,id',
             'products.*.quantity' => ['required', 'integer', 'min:1'],
@@ -140,7 +140,6 @@ class CTVController extends Controller
             'customer_name' => 'string|max:255',
             'phone' => 'string',
             'mass_of_order' => 'numeric',
-            'time_service' => 'numeric',
             'products' => 'array',
             'products.*.id' => 'exists:products,id',
             'products.*.quantity' => ['integer', 'min:1'],
@@ -219,7 +218,9 @@ class CTVController extends Controller
     //     }
     // }
 
+
     //Products
+
     public function showProduct(Request $request)
     {
         $name = $request->input('name');
@@ -237,10 +238,6 @@ class CTVController extends Controller
         if ($sku) {
             $product = $product->where('sku', 'like', '%' . $sku . '%');
         }
-
-        // if ($vehicle_type) {
-        //     $product = $product->where('vehicle_type', 'like', '%' . $vehicle_type . '%');
-        // }
 
         $product = $product->paginate(10);
 
@@ -272,11 +269,86 @@ class CTVController extends Controller
     public function getAll()
 
     {
-        $product = Product::where('status','Active')->get(['id', 'name', 'sku', 'price', 'quantity']);
+        $product = Product::where('status', 'Active')->get(['id', 'name', 'sku', 'price', 'quantity']);
         return response()->json([
             'success' => true,
             'message' => 'List of all products',
             'data' => $product
+        ]);
+    }
+
+    public function getStats(Request $request)
+    {
+        $year = $request->input('year', date('Y'));
+        $month = $request->input('month', date('m'));
+        $filterType = $request->input('filter_type', 'month');
+        $orderBy = $request->input('order_by', 'stat_date');
+        $sortBy = $request->input('sort_by', 'desc');
+
+        $partnerId = $request->user['partner_id'];
+
+        $query = Partner::where('id', $partnerId)->with(['monthlyStats' => function ($query) use ($year, $month, $filterType, $orderBy, $sortBy) {
+            $query->whereYear('stat_date', $year);
+            if ($filterType === 'month') {
+                $query->whereMonth('stat_date', $month);
+            }
+            $query->orderBy($orderBy, $sortBy);
+        }]);
+
+        $partner = $query->first();
+
+        if (!$partner) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Partner not found',
+                'data' => null
+            ], 404);
+        }
+
+        $stats = $partner->monthlyStats->map(function ($stat) {
+            return [
+                'stat_date' => $stat->stat_date,
+                'total_base_price' => $stat->total_base_price,
+                'revenue' => $stat->revenue,
+                'commission' => $stat->commission,
+                'bonus' => $stat->bonus,
+                'total_amount' => $stat->total_amount,
+                'order_count' => $stat->order_count,
+            ];
+        });
+
+        if ($filterType === 'year') {
+            $totalStats = [
+                'total_base_price' => $stats->sum('total_base_price'),
+                'revenue' => $stats->sum('revenue'),
+                'commission' => $stats->sum('commission'),
+                'bonus' => $stats->sum('bonus'),
+                'total_amount' => $stats->sum('total_amount'),
+                'order_count' => $stats->sum('order_count'),
+            ];
+        } else {
+            $totalStats = $stats->first() ?: [
+                'total_base_price' => 0,
+                'revenue' => 0,
+                'commission' => 0,
+                'bonus' => 0,
+                'total_amount' => 0,
+                'order_count' => 0,
+            ];
+        }
+
+        return response()->json([
+            'success' => true,
+            'message' => $filterType === 'year' ? 'Yearly stats of partner' : 'Monthly stats of partner',
+            'data' => [
+                'partner_id' => $partner->id,
+                'partner_name' => $partner->name,
+                'filter_type' => $filterType,
+                'year' => $year,
+                'month' => $filterType === 'month' ? $month : null,
+                'total_stats' => $totalStats,
+                'detailed_stats' => $stats
+            ]
         ]);
     }
 }

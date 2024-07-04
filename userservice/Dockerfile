@@ -63,6 +63,9 @@ WORKDIR /var/www/html/userservice
 # # Copy source code to container
 COPY . /var/www/html/userservice
 # USER $user
+# Set userservice folder permissions
+RUN chown -R www-data:www-data /var/www/html/userservice
+RUN chmod -R 777 /var/www/html/userservice
 
 # Expose cổng mặc định cho server HTTP
 EXPOSE 9000

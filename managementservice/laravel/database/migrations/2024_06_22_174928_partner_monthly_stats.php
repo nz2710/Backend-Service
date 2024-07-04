@@ -22,6 +22,7 @@ class PartnerMonthlyStats extends Migration
             $table->decimal('revenue', 20, 2)->default(0);
             $table->decimal('commission', 20, 2)->default(0);
             $table->decimal('bonus', 20, 2)->default(0);
+            $table->decimal('total_amount', 20, 2)->default(0);
             $table->integer('order_count')->default(0);
             $table->timestamps();
 

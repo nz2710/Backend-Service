@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Admin;
 
+use App\Models\Plan;
 use App\Models\Depot;
 use App\Models\Order;
 use App\Models\Partner;
@@ -35,6 +36,135 @@ class DashBoardController extends Controller
         ]);
     }
 
+    public function getOrderStatusCounts(Request $request)
+    {
+        $year = $request->input('year');
+        $month = $request->input('month');
+        $filterType = $request->input('filter_type', 'month');
+
+        $validator = Validator::make($request->all(), [
+            'year' => 'required|integer|min:2000|max:' . date('Y'),
+            'month' => 'integer|min:1|max:12',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json(['success' => false, 'message' => $validator->errors()], 400);
+        }
+
+        $statusCounts = [];
+
+        if ($filterType === 'year') {
+            $query = Order::whereYear('created_at', $year)
+                ->selectRaw('status, COUNT(*) as count')
+                ->groupBy('status');
+
+            $statusCounts = $query->get()->pluck('count', 'status')->toArray();
+        } elseif ($filterType === 'month') {
+            $startDate = Carbon::create($year, $month)->startOfMonth();
+            $endDate = Carbon::create($year, $month)->endOfMonth();
+
+            $query = Order::whereBetween('created_at', [$startDate, $endDate])
+                ->selectRaw('status, COUNT(*) as count')
+                ->groupBy('status');
+
+            $statusCounts = $query->get()->pluck('count', 'status')->toArray();
+        } else {
+            return response()->json(['success' => false, 'message' => 'Invalid filter type'], 400);
+        }
+
+        $data = [
+            'Waiting' => $statusCounts['Waiting'] ?? 0,
+            'Pending' => $statusCounts['Pending'] ?? 0,
+            'Delivery' => $statusCounts['Delivery'] ?? 0,
+            'Success' => $statusCounts['Success'] ?? 0,
+            'Cancelled' => $statusCounts['Cancelled'] ?? 0,
+        ];
+
+        return response()->json([
+            'success' => true,
+            'data' => $data,
+        ]);
+    }
+
+    public function getTransportationCosts(Request $request)
+    {
+        $year = $request->input('year');
+        $month = $request->input('month');
+        $filterType = $request->input('filter_type', 'month');
+
+        $validator = Validator::make($request->all(), [
+            'year' => 'required|integer|min:2000|max:' . date('Y'),
+            'month' => 'integer|min:1|max:12',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json(['success' => false, 'message' => $validator->errors()], 400);
+        }
+
+        $query = Plan::where('status', 'Success');
+
+        if ($filterType === 'year') {
+            $startDate = Carbon::create($year)->startOfYear();
+            $endDate = Carbon::create($year)->endOfYear();
+            $query->whereBetween('updated_at', [$startDate, $endDate]);
+
+            $transportationCosts = $query->selectRaw('MONTH(updated_at) as month, SUM(moving_cost) as total_moving_cost, SUM(labor_cost) as total_labor_cost, SUM(fee) as total_cost')
+                ->groupBy('month')
+                ->get();
+
+            $months = [];
+            for ($month = 1; $month <= 12; $month++) {
+                $months[$month] = [
+                    'month' => Carbon::create($year, $month)->format('F'),
+                    'moving_cost' => 0,
+                    'labor_cost' => 0,
+                    'total_cost' => 0,
+                ];
+            }
+
+            foreach ($transportationCosts as $cost) {
+                $months[$cost->month]['moving_cost'] = $cost->total_moving_cost;
+                $months[$cost->month]['labor_cost'] = $cost->total_labor_cost;
+                $months[$cost->month]['total_cost'] = $cost->total_cost;
+            }
+
+            $data = array_values($months);
+        } elseif ($filterType === 'month') {
+            $startDate = Carbon::create($year, $month)->startOfMonth();
+            $endDate = Carbon::create($year, $month)->endOfMonth();
+            $query->whereBetween('updated_at', [$startDate, $endDate]);
+
+            $transportationCosts = $query->selectRaw('DATE(updated_at) as date, SUM(moving_cost) as total_moving_cost, SUM(labor_cost) as total_labor_cost, SUM(fee) as total_cost')
+                ->groupBy('date')
+                ->get();
+
+            $dates = [];
+            for ($date = $startDate; $date->lte($endDate); $date->addDay()) {
+                $dates[$date->format('Y-m-d')] = [
+                    'date' => $date->format('Y-m-d'),
+                    'moving_cost' => 0,
+                    'labor_cost' => 0,
+                    'total_cost' => 0,
+                ];
+            }
+
+            foreach ($transportationCosts as $cost) {
+                $dates[$cost->date]['moving_cost'] = $cost->total_moving_cost;
+                $dates[$cost->date]['labor_cost'] = $cost->total_labor_cost;
+                $dates[$cost->date]['total_cost'] = $cost->total_cost;
+            }
+
+            $data = array_values($dates);
+        } else {
+            return response()->json(['success' => false, 'message' => 'Invalid filter type'], 400);
+        }
+
+        return response()->json([
+            'success' => true,
+            'data' => $data,
+        ]);
+    }
+
     public function getTopProducts(Request $request)
     {
         $year = $request->input('year');
@@ -54,8 +184,8 @@ class DashBoardController extends Controller
 
         if ($filterType === 'year') {
             $query = OrderProduct::with('product')
-            ->whereYear('created_at', $year)
-            ->groupBy('product_id');
+                ->whereYear('created_at', $year)
+                ->groupBy('product_id');
 
             if ($metricType === 'sale') {
                 $query->selectRaw('product_id, SUM(price*quantity) as total_metric')

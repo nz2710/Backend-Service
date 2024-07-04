@@ -20,6 +20,7 @@ class Route extends Model
         'labor_cost',
         'unloading_cost',
         'total_order_value',
+        'total_order_profit',
         'total_route_value',
         'profit',
         'alternative',
