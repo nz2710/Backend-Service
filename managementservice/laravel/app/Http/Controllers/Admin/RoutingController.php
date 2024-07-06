@@ -469,69 +469,6 @@ class RoutingController extends Controller
         ]);
     }
 
-    // public function getRoutes(Request $request, $planId)
-    // {
-    //     $plan = Plan::findOrFail($planId);
-
-    //     if ($plan->status !== 'Delivery') {
-    //         return response()->json([
-    //             'success' => false,
-    //             'message' => 'This plan is not in Delivery status.',
-    //         ], 400);
-    //     }
-
-    //     $perPage = $request->input('per_page', 10);
-    //     $page = $request->input('page', 1);
-
-    //     $routes = $plan->routes()
-    //         ->where('is_served', true)
-    //         ->select('id', 'route')
-    //         ->paginate($perPage, ['*'], 'page', $page);
-
-    //     $allOrderIds = $routes->pluck('route')
-    //         ->map(function ($route) {
-    //             return array_filter(json_decode($route, true), 'is_numeric');
-    //         })
-    //         ->flatten()
-    //         ->unique();
-
-    //     $orderDetails = Order::whereIn('id', $allOrderIds)
-    //         ->select('id', 'code_order')
-    //         ->get()
-    //         ->keyBy('id');
-
-    //     $formattedRoutes = $routes->map(function ($route) use ($orderDetails) {
-    //         $routeData = json_decode($route->route, true);
-    //         $orders = array_values(array_filter($routeData, function($item) {
-    //             return is_numeric($item);
-    //         }));
-
-    //         $ordersWithCodes = array_map(function($orderId) use ($orderDetails) {
-    //             $order = $orderDetails->get($orderId);
-    //             return [
-    //                 'id' => $orderId,
-    //                 'code_order' => $order ? $order->code_order : null
-    //             ];
-    //         }, $orders);
-
-    //         return [
-    //             'route_id' => $route->id,
-    //             'orders' => $ordersWithCodes,
-    //         ];
-    //     });
-
-    //     return response()->json([
-    //         'success' => true,
-    //         'plan_id' => $plan->id,
-    //         'plan_name' => $plan->name,
-    //         'routes' => $formattedRoutes,
-    //         'current_page' => $routes->currentPage(),
-    //         'per_page' => $routes->perPage(),
-    //         'total' => $routes->total(),
-    //         'last_page' => $routes->lastPage(),
-    //     ]);
-    // }
-
     public function confirmPlan($planId)
     {
         try {
@@ -577,20 +514,84 @@ class RoutingController extends Controller
     {
         try {
             $plan = Plan::with(['routes' => function ($query) {
-                $query->where('is_served', true);
-            }])->findOrFail($planId);
+                $query->where('is_served', true)->with(['orders' => function ($query) {
+                    $query->select('id', 'route_id', 'mass_of_order', 'price', 'profit', 'time_service');
+                }]);
+            }, 'vehicle'])->findOrFail($planId);
 
             if ($plan->status !== 'Delivery') {
                 return $this->jsonResponse(false, 'This plan is not in Delivery status.', 400);
             }
 
-            DB::transaction(function () use ($plan) {
+            $incompleteOrderIds = $request->input('incomplete_order_ids', []);
+
+            DB::transaction(function () use ($plan, $incompleteOrderIds) {
                 $orderIds = $this->getOrderIdsFromPlan($plan);
 
-                Order::whereIn('id', $orderIds)->update(['status' => 'Success']);
+                Order::whereIn('id', $orderIds)
+                    ->whereNotIn('id', $incompleteOrderIds)
+                    ->update(['status' => 'Success']);
 
-                $plan->status = 'Success';
-                $plan->save();
+                Order::whereIn('id', $incompleteOrderIds)
+                    ->update(['status' => 'Pending']);
+
+                // Recalculate values for plan and routes
+                $shipping_rate = $plan->vehicle->shipping_rate;
+                $hourly_rate = $plan->vehicle->hourly_rate;
+                $incompleteOrders = Order::whereIn('id', $incompleteOrderIds)->get();
+
+                $total_plan_demand = $plan->total_demand - $incompleteOrders->sum('mass_of_order');
+                $total_plan_time_serving = $plan->total_time_serving - $incompleteOrders->sum('time_service');
+                $plan_labor_cost = $hourly_rate * ($total_plan_time_serving / 60);
+                $plan_fee = $plan_labor_cost + $plan->moving_cost;
+                $plan_unloading_cost = $shipping_rate * $total_plan_demand;
+                $total_plan_order_value = $plan->total_order_value - $incompleteOrders->sum('price');
+                $total_plan_order_profit = $plan->total_order_profit - $incompleteOrders->sum('profit');
+                $total_plan_value = $total_plan_order_value + $plan_unloading_cost;
+                $plan_profit = $total_plan_order_profit + $plan_unloading_cost - $plan_fee;
+                $total_plan_num_customer_served = $plan->total_num_customer_served - $incompleteOrders->count();
+                $total_plan_num_customer_not_served = $plan->total_num_customer_not_served + $incompleteOrders->count();
+
+                $plan->update([
+                    'total_demand' => $total_plan_demand,
+                    'total_time_serving' => $total_plan_time_serving,
+                    'fee' => $plan_fee,
+                    'labor_cost' => $plan_labor_cost,
+                    'unloading_cost' => $plan_unloading_cost,
+                    'total_order_value' => $total_plan_order_value,
+                    'total_order_profit' => $total_plan_order_profit,
+                    'total_plan_value' => $total_plan_value,
+                    'profit' => $plan_profit,
+                    'total_num_customer_served' => $total_plan_num_customer_served,
+                    'total_num_customer_not_served' => $total_plan_num_customer_not_served,
+                    'status' => 'Success'
+                ]);
+
+                foreach ($plan->routes as $route) {
+                    $incompleteRouteOrders = $route->orders->whereIn('id', $incompleteOrderIds);
+
+                    $route_demand = $route->total_demand - $incompleteRouteOrders->sum('mass_of_order');
+                    $route_time_serving = $route->total_time_serving - $incompleteRouteOrders->sum('time_service');
+                    $route_labor_cost = $hourly_rate * ($route_time_serving / 60);
+                    $route_fee = $route_labor_cost + $route->moving_cost;
+                    $route_unloading_cost = $shipping_rate * $route_demand;
+                    $route_order_value = $route->total_order_value - $incompleteRouteOrders->sum('price');
+                    $route_order_profit = $route->total_order_profit - $incompleteRouteOrders->sum('profit');
+                    $route_total_route_value = $route_order_value + $route_unloading_cost;
+                    $route_profit = $route_order_profit + $route_unloading_cost - $route_fee;
+
+                    $route->update([
+                        'total_demand' => $route_demand,
+                        'total_time_serving' => $route_time_serving,
+                        'fee' => $route_fee,
+                        'labor_cost' => $route_labor_cost,
+                        'unloading_cost' => $route_unloading_cost,
+                        'total_order_value' => $route_order_value,
+                        'total_order_profit' => $route_order_profit,
+                        'total_route_value' => $route_total_route_value,
+                        'profit' => $route_profit
+                    ]);
+                }
             });
 
             return $this->jsonResponse(true, 'Plan completed successfully', 200, ['plan_status' => $plan->status]);
@@ -624,5 +625,64 @@ class RoutingController extends Controller
             'success' => $success,
             'message' => $message
         ], $extraData), $status);
+    }
+
+    public function getRoutes(Request $request, $planId)
+    {
+        $plan = Plan::findOrFail($planId);
+
+        if ($plan->status !== 'Delivery') {
+            return response()->json([
+                'success' => false,
+                'message' => 'This plan is not in Delivery status.',
+            ], 400);
+        }
+
+        $routes = $plan->routes()
+            ->where('is_served', true)
+            ->select('id', 'route')
+            ->get();
+
+        $allOrderIds = $routes->pluck('route')
+            ->map(function ($route) {
+                return array_filter(json_decode($route, true), 'is_numeric');
+            })
+            ->flatten()
+            ->unique();
+
+        $orderDetails = Order::whereIn('id', $allOrderIds)
+            ->select('id', 'code_order', 'customer_name', 'address')
+            ->get()
+            ->keyBy('id');
+
+        $formattedRoutes = $routes->map(function ($route) use ($orderDetails) {
+            $routeData = json_decode($route->route, true);
+            $orders = array_values(array_filter($routeData, function ($item) {
+                return is_numeric($item);
+            }));
+
+            $ordersWithCodes = array_map(function ($orderId) use ($orderDetails) {
+                $order = $orderDetails->get($orderId);
+                return [
+                    'id' => $orderId,
+                    'code_order' => $order->code_order,
+                    'customer_name' => $order->customer_name,
+                    'address' => $order->address,
+                ];
+            }, $orders);
+
+            return [
+                'route_id' => $route->id,
+                'orders' => $ordersWithCodes,
+            ];
+        });
+
+        return response()->json([
+            'success' => true,
+            'plan_id' => $plan->id,
+            'plan_name' => $plan->name,
+            'routes' => $formattedRoutes,
+            'total_routes' => $routes->count(),
+        ]);
     }
 }

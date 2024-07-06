@@ -26,7 +26,7 @@ class CTVController extends Controller
 
         $this->middleware('authPartner');
     }
-
+    //Order
     public function index(Request $request)
     {
         $code_order = $request->input('code_order');
@@ -190,37 +190,7 @@ class CTVController extends Controller
         }
     }
 
-    // public function delete(Request $request, $id)
-    // {
-    //     $partnerId = $request->user['partner_id'];
-
-    //     try {
-    //         $deletedOrder = $this->orderService->deleteOrder($id);
-
-    //         // Kiểm tra xem đơn hàng có thuộc về CTV này không
-    //         if ($deletedOrder->partner_id != $partnerId) {
-    //             return response()->json([
-    //                 'success' => false,
-    //                 'message' => 'You are not authorized to delete this order',
-    //             ], 403);
-    //         }
-
-    //         return response()->json([
-    //             'success' => true,
-    //             'message' => 'Order deleted successfully',
-    //             'data' => $deletedOrder
-    //         ]);
-    //     } catch (\Exception $e) {
-    //         return response()->json([
-    //             'success' => false,
-    //             'message' => $e->getMessage(),
-    //         ], 400);
-    //     }
-    // }
-
-
-    //Products
-
+    //Product
     public function showProduct(Request $request)
     {
         $name = $request->input('name');
@@ -277,6 +247,7 @@ class CTVController extends Controller
         ]);
     }
 
+    //Commission
     public function getStats(Request $request)
     {
         $year = $request->input('year', date('Y'));

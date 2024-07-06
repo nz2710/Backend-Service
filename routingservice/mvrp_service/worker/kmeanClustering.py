@@ -44,7 +44,7 @@ class KmeanCore:
         centroids = [self.kmeans_init_centroids(X, K)]
         labels = []
         it = 0
-        max_it = 300 
+        max_it = 500 
         while True:
             labels.append(self.kmeans_assign_labels(X, centroids[-1]))
             new_centroids = self.kmeans_update_centroids(X, labels[-1], K)

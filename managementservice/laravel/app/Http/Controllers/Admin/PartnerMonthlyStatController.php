@@ -115,6 +115,8 @@ class PartnerMonthlyStatController extends Controller
         $year = $request->input('year', date('Y'));
         $month = $request->input('month', date('m'));
         $filterType = $request->input('filter_type', 'month');
+        $perPage = $request->input('pageSize', 5);
+        $page = $request->input('page', 1);
 
         $partner = Partner::with(['monthlyStats' => function ($query) use ($year, $month, $filterType) {
             $query->whereYear('stat_date', $year);
@@ -141,6 +143,8 @@ class PartnerMonthlyStatController extends Controller
             $totalAmount = $monthlyStats->sum('total_amount');
             $orderCount = $monthlyStats->sum('order_count');
 
+            $orders = $partner->orders()->whereYear('created_at', $year)->paginate($perPage, ['*'], 'page', $page);
+
             $partnerStat = [
                 'partner_id' => $partner->id,
                 'partner_name' => $partner->name,
@@ -151,9 +155,12 @@ class PartnerMonthlyStatController extends Controller
                 'bonus' => $bonus,
                 'total_amount' => $totalAmount,
                 'order_count' => $orderCount,
+                'orders' => $orders->items(),
             ];
         } else {
             $monthlyStat = $monthlyStats->first();
+
+            $orders = $monthlyStat ? $monthlyStat->orders()->paginate($perPage, ['*'], 'page', $page) : collect();
 
             $partnerStat = [
                 'partner_id' => $partner->id,
@@ -166,13 +173,17 @@ class PartnerMonthlyStatController extends Controller
                 'bonus' => $monthlyStat->bonus ?? 0,
                 'total_amount' => $monthlyStat->total_amount ?? 0,
                 'order_count' => $monthlyStat->order_count ?? 0,
+                'orders' => $orders->items(),
             ];
         }
 
         return response()->json([
             'success' => true,
             'message' => $filterType === 'year' ? 'Yearly stat of partner' : 'Monthly stat of partner',
-            'data' => $partnerStat
+            'data' => $partnerStat,
+            'per_page' => $orders->perPage(),
+            'current_page' => $orders->currentPage(),
+            'last_page' => $orders->lastPage(),
         ]);
     }
 

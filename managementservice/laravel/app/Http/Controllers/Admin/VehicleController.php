@@ -11,6 +11,7 @@ class VehicleController extends Controller
     public function index(Request $request)
     {
         $name = $request->input('name');
+        $status = $request->input('status');
         $orderBy = $request->input('order_by', 'id');
         $sortBy = $request->input('sort_by', 'asc');
 
@@ -18,6 +19,10 @@ class VehicleController extends Controller
 
         if ($name) {
             $vehicle = $vehicle->where('name', 'like', '%' . $name . '%');
+        }
+
+        if ($status) {
+            $vehicle = $vehicle->where('status', $status);
         }
 
         $vehicle = $vehicle->paginate(10);

@@ -93,20 +93,22 @@ Route::group([
         Route::get('dashboard/total-all', [DashBoardController::class, 'getTotalAll']);
         Route::get('dashboard/order-status', [DashBoardController::class, 'getOrderStatusCounts']);
         Route::get('dashboard/transport-cost', [DashBoardController::class, 'getTransportationCosts']);
-        // Route::get('dashboard/summary', [DashBoardController::class, 'getSummaryData']);
+        Route::get('dashboard/average', [DashBoardController::class, 'getAverageTransportationStats']);
+        Route::get('dashboard/metric', [DashBoardController::class, 'getTransportationMetrics']);
+
         Route::get('dashboard/top-partners', [DashBoardController::class, 'getTopPartners']);
         Route::get('dashboard/top-products', [DashBoardController::class, 'getTopProducts']);
         Route::get('dashboard/revenue-summary', [DashBoardController::class, 'getRevenueSummary']);
         Route::get('dashboard/itemsold-summary', [DashBoardController::class, 'getItemSoldSummary']);
         Route::get('dashboard/cost-summary', [DashBoardController::class, 'getCostSummary']);
-        Route::get('dashboard/summary', [DashBoardController::class, 'getSummary']);
+        Route::get('dashboard/profit-summary', [DashBoardController::class, 'getProfitSummary']);
+        Route::get('dashboard/summary', [DashBoardController::class, 'getTotalSummary']);
 
         //Routing routes
         Route::post('routing/generateFile', [RoutingController::class, 'generateFile']);
         Route::get('routing', [RoutingController::class, 'index']);
         Route::delete('routing/{id}', [RoutingController::class, 'destroy']);
         Route::get('/routing/{id}', [RoutingController::class, 'show']);
-        // Route::get('/routing/{routeId}/coordinates', [RoutingController::class, 'getRouteCoordinates']);
         Route::get('/route/{routeId}', [RoutingController::class, 'showRoute']);
         Route::get('/plans/{planId}/routes', [RoutingController::class, 'getRoutes']);
         Route::put('/plans/{planId}/confirm', [RoutingController::class, 'confirmPlan']);

@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 
@@ -16,7 +17,10 @@ class PartnerMonthlyStat extends Model
     }
     public function orders()
     {
-        return $this->partner->orders()->whereYear('created_at', $this->stat_date->format('Y'))
-                                        ->whereMonth('created_at', $this->stat_date->format('m'));
+        {
+            $statDate = Carbon::parse($this->stat_date);
+            return $this->partner->orders()->whereYear('created_at', $statDate->format('Y'))
+                                            ->whereMonth('created_at', $statDate->format('m'));
+        }
     }
 }
