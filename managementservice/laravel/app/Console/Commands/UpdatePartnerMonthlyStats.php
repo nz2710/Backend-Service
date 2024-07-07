@@ -16,7 +16,10 @@ class UpdatePartnerMonthlyStats extends Command
 
     public function handle()
     {
-        $firstOrderDate = Order::orderBy('created_at')->first()->created_at ?? now();
+        $firstOrderDate = Order::whereIn('status', ['Pending', 'Success', 'Delivery'])
+            ->orderBy('created_at')
+            ->first()->created_at ?? now();
+
         $currentDate = Carbon::now();
 
         $months = [];
@@ -39,6 +42,7 @@ class UpdatePartnerMonthlyStats extends Command
                 $endDate = $startDate->copy()->endOfMonth();
 
                 $stats = Order::where('partner_id', $partnerId)
+                    ->whereIn('status', ['Pending', 'Success', 'Delivery'])
                     ->whereBetween('created_at', [$startDate, $endDate])
                     ->select(
                         DB::raw('SUM(total_base_price) as total_base_price'),

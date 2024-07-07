@@ -40,6 +40,10 @@ class OrderService
             throw new \Exception('Cannot cancel a delivery order');
         }
 
+        if ($order->status === 'Success') {
+            throw new \Exception('Cannot cancel a success order');
+        }
+
         DB::beginTransaction();
 
         try {
@@ -51,7 +55,6 @@ class OrderService
                     // Không cần cập nhật partner hay sản phẩm
                     break;
                 case 'Pending':
-                case 'Success':
                     // Cập nhật revenue, number_of_order và commission của partner
                     $partner->revenue -= $order->price;
                     $partner->number_of_order -= 1;

@@ -125,7 +125,6 @@ Route::group([
         Route::post('orders', [CTVController::class, 'store']);
         Route::get('orders/{id}', [CTVController::class, 'show']);
         Route::put('orders/{id}', [CTVController::class, 'update']);
-        // Route::delete('orders/{id}', [CTVController::class, 'delete']);
         Route::post('orders/{id}/cancel', [CTVController::class, 'cancel']);
 
         // Partner Product routes
@@ -133,6 +132,7 @@ Route::group([
         Route::get('products/{id}', [CTVController::class, 'showProductDetail']);
         Route::get('getProducts', [CTVController::class, 'getAll']);
 
+        // Partner Commission routes
         Route::get('stats', [CTVController::class, 'getStats']);
     });
 });

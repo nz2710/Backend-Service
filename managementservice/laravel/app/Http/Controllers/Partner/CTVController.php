@@ -255,6 +255,8 @@ class CTVController extends Controller
         $filterType = $request->input('filter_type', 'month');
         $orderBy = $request->input('order_by', 'stat_date');
         $sortBy = $request->input('sort_by', 'desc');
+        $page = $request->input('page', 1);
+        $perPage = $request->input('pageSize', 10);
 
         $partnerId = $request->user['partner_id'];
 
@@ -276,19 +278,19 @@ class CTVController extends Controller
             ], 404);
         }
 
-        $stats = $partner->monthlyStats->map(function ($stat) {
-            return [
-                'stat_date' => $stat->stat_date,
-                'total_base_price' => $stat->total_base_price,
-                'revenue' => $stat->revenue,
-                'commission' => $stat->commission,
-                'bonus' => $stat->bonus,
-                'total_amount' => $stat->total_amount,
-                'order_count' => $stat->order_count,
-            ];
-        });
-
         if ($filterType === 'year') {
+            $stats = $partner->monthlyStats->map(function ($stat) {
+                return [
+                    'stat_date' => $stat->stat_date,
+                    'total_base_price' => $stat->total_base_price,
+                    'revenue' => $stat->revenue,
+                    'commission' => $stat->commission,
+                    'bonus' => $stat->bonus,
+                    'total_amount' => $stat->total_amount,
+                    'order_count' => $stat->order_count,
+                ];
+            });
+
             $totalStats = [
                 'total_base_price' => $stats->sum('total_base_price'),
                 'revenue' => $stats->sum('revenue'),
@@ -298,14 +300,57 @@ class CTVController extends Controller
                 'order_count' => $stats->sum('order_count'),
             ];
         } else {
-            $totalStats = $stats->first() ?: [
-                'total_base_price' => 0,
-                'revenue' => 0,
-                'commission' => 0,
-                'bonus' => 0,
-                'total_amount' => 0,
-                'order_count' => 0,
-            ];
+            $stat = $partner->monthlyStats->first();
+
+            if ($stat) {
+                $orders = $stat->orders()->with('partner')->paginate($perPage, ['*'], 'page', $page);
+
+                $stats = [
+                    'stat_date' => $stat->stat_date,
+                    'orders' => $orders->map(function ($order) {
+                        return [
+                            'id' => $order->id,
+                            'code_order' => $order->code_order,
+                            'price' => $order->price,
+                            'total_base_price' => $order->total_base_price,
+                            'commission' => $order->commission,
+                            'created_at' => $order->created_at->format('Y-m-d'),
+                            'status' => $order->status
+                        ];
+                    }),
+                    'current_page' => $orders->currentPage(),
+                    'last_page' => $orders->lastPage(),
+                    'per_page' => $orders->perPage(),
+                    'total' => $orders->total(),
+                ];
+
+                $totalStats = [
+                    'total_base_price' => $stat->total_base_price,
+                    'revenue' => $stat->revenue,
+                    'commission' => $stat->commission,
+                    'bonus' => $stat->bonus,
+                    'total_amount' => $stat->total_amount,
+                    'order_count' => $stat->order_count,
+                ];
+            } else {
+                $stats = [
+                    'stat_date' => date('Y-m-01', strtotime($year . '-' . $month . '-01')),
+                    'orders' => [],
+                    'current_page' => 1,
+                    'last_page' => 1,
+                    'per_page' => $perPage,
+                    'total' => 0,
+                ];
+
+                $totalStats = [
+                    'total_base_price' => 0,
+                    'revenue' => 0,
+                    'commission' => 0,
+                    'bonus' => 0,
+                    'total_amount' => 0,
+                    'order_count' => 0,
+                ];
+            }
         }
 
         return response()->json([
@@ -318,8 +363,8 @@ class CTVController extends Controller
                 'year' => $year,
                 'month' => $filterType === 'month' ? $month : null,
                 'total_stats' => $totalStats,
-                'detailed_stats' => $stats
-            ]
+                'detailed_stats' => $stats,
+            ],
         ]);
     }
 }
