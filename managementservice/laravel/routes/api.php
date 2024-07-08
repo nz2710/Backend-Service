@@ -134,5 +134,8 @@ Route::group([
 
         // Partner Commission routes
         Route::get('stats', [CTVController::class, 'getStats']);
+
+        // Partner Dashboard
+        Route::get('dashboard-stats', [CTVController::class, 'getDashboardStats']);
     });
 });

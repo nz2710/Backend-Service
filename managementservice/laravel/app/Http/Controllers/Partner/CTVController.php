@@ -367,4 +367,50 @@ class CTVController extends Controller
             ],
         ]);
     }
+
+    public function getDashboardStats(Request $request)
+    {
+        $partnerId = $request->user['partner_id'];
+
+        // Định nghĩa các trạng thái mặc định với giá trị ban đầu là 0
+        $defaultOrderStats = [
+            'Waiting' => 0,
+            'Pending' => 0,
+            'Delivery' => 0,
+            'Success' => 0,
+            'Cancelled' => 0,
+        ];
+
+        // Lấy số lượng đơn hàng theo status
+        $orderStats = Order::selectRaw('status, count(*) as count')
+            ->where('partner_id', $partnerId)
+            ->groupBy('status')
+            ->pluck('count', 'status')
+            ->toArray();
+
+        // Kết hợp kết quả truy vấn với các trạng thái mặc định
+        $orderStats = array_merge($defaultOrderStats, $orderStats);
+
+        // Lấy revenue, commission, bonus, number_of_order từ bảng partner
+        $partner = Partner::select('revenue', 'commission', 'bonus', 'number_of_order')
+            ->where('id', $partnerId)
+            ->first();
+
+        $revenue = $partner->revenue;
+        $commission = $partner->commission;
+        $bonus = $partner->bonus;
+        $numberOfOrders = $partner->number_of_order;
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Partner dashboard stats',
+            'data' => [
+                'order_stats' => $orderStats,
+                'revenue' => $revenue,
+                'commission' => $commission,
+                'bonus' => $bonus,
+                'number_of_orders' => $numberOfOrders,
+            ],
+        ]);
+    }
 }
